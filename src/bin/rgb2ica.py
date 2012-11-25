@@ -1,6 +1,6 @@
 import bisect
 import numpy
-import ica
+from cardiacam import ica
 
 if True:
 	rgb = numpy.loadtxt("rgb1.txt")
