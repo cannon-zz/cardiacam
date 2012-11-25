@@ -1,0 +1,347 @@
+#!/usr/bin/env python
+
+
+#
+# =============================================================================
+#
+#                                   Preamble
+#
+# =============================================================================
+#
+
+
+from optparse import OptionParser
+import sys
+
+
+import pygtk
+pygtk.require("2.0")
+import gobject
+gobject.threads_init()
+import pygst
+pygst.require("0.10")
+import gst
+
+
+__author__ = "Kipp Cannon <kcannon@cita.utoronto.ca>"
+__version__ = "FIXME"
+__date__ = "FIXME"
+
+
+#
+# =============================================================================
+#
+#                            Pipeline Construction
+#
+# =============================================================================
+#
+
+
+def mkelem(pipeline, src, elem_type_name, **properties):
+	if "name" in properties:
+		elem = gst.element_factory_make(elem_type_name, properties.pop("name"))
+	else:
+		elem = gst.element_factory_make(elem_type_name)
+	for name, value in properties.items():
+		elem.set_property(name.replace("_", "-"), value)
+	pipeline.add(elem)
+	if isinstance(src, gst.Pad):
+		src.get_parent_element().link_pads(src, elem, None)
+	elif src is not None:
+		src.link(elem)
+	return elem
+
+
+def deferred_link(src, srcpadname, sinkpad):
+	def pad_added(element, pad, (srcpadname, sinkpad)):
+		if pad.get_name() == srcpadname:
+			pad.link(sinkpad)
+	src.connect("pad-added", pad_added, (srcpadname, sinkpad))
+
+
+#
+# =============================================================================
+#
+#                                 Command Line
+#
+# =============================================================================
+#
+
+
+def parse_command_line():
+	parser = OptionParser(
+		version = "%prog ??",
+		usage = "%prog [options] filename",
+		description = "Convert a LIGO Light Weight XML file containing software injection descriptions into an audio file."
+	)
+	parser.add_option("--input", metavar = "filename", default = "/dev/video0", help = "Set the name of the input file (default = \"/dev/video0\").  If the filename starts with \"/dev/\" then it is assumed to be a V4L device.")
+
+	options, filenames = parser.parse_args()
+
+	return options, filenames
+
+
+#
+# =============================================================================
+#
+#                              Face Processor Bin
+#
+# =============================================================================
+#
+
+
+class face_processor(gst.Bin):
+	"""
+	Face processor bin.
+	"""
+
+	__gstdetails__ = (
+		"Face Processor",
+		"Filter",
+		__doc__,
+		__author__
+	)
+
+	__gproperties__ = {
+		"face-x" : (
+			gobject.TYPE_UINT,
+			"face-x",
+			"left edge of face",
+			0, gobject.G_MAXUINT, 0,
+			gobject.PARAM_READWRITE | gobject.PARAM_CONSTRUCT
+		),
+		"face-y" : (
+			gobject.TYPE_UINT,
+			"face-y",
+			"top of face",
+			0, gobject.G_MAXUINT, 0,
+			gobject.PARAM_READWRITE | gobject.PARAM_CONSTRUCT
+		),
+		"face-width" : (
+			gobject.TYPE_UINT,
+			"face-width",
+			"width of face",
+			0, gobject.G_MAXUINT, 0,
+			gobject.PARAM_READWRITE | gobject.PARAM_CONSTRUCT
+		),
+		"face-height" : (
+			gobject.TYPE_UINT,
+			"face-height",
+			"height of face",
+			0, gobject.G_MAXUINT, 0,
+			gobject.PARAM_READWRITE | gobject.PARAM_CONSTRUCT
+		)
+	}
+
+	def do_set_property(self, prop, val):
+		if prop.name == "face-x":
+			self.face_x = val
+		elif prop.name == "face-y":
+			self.face_y = val
+		elif prop.name == "face-width":
+			self.face_width = val
+		elif prop.name == "face-height":
+			self.face_height = val
+		else:
+			raise AssertError
+
+		#
+		# adjust video crop box.  if the face's width or height is
+		# 0, interpret that to mean "no crop box".
+		#
+
+		if 0 in (self.face_width, self.face_height, self.video_width, self.video_height):
+			self.crop.set_property("left", 0)
+			self.crop.set_property("top", 0)
+			self.crop.set_property("right", 0)
+			self.crop.set_property("bottom", 0)
+		else:
+			self.crop.set_property("left", self.face_x)
+			self.crop.set_property("top", self.face_y)
+			self.crop.set_property("right", self.video_width - (self.face_x + self.face_width))
+			self.crop.set_property("bottom", self.video_height - (self.face_y + self.face_height))
+
+	def do_get_property(self, prop):
+		if prop.name == "face-x":
+			return self.face_x
+		elif prop.name == "face-y":
+			return self.face_y
+		elif prop.name == "face-width":
+			return self.face_width
+		elif prop.name == "face-height":
+			return self.face_height
+		else:
+			raise AssertError
+
+	def new_video_caps(self, pad, pspec):
+		s = pad.get_property("caps")[0]
+		self.video_width = s["width"]
+		self.video_height = s["height"]
+
+		#
+		# reset face bounding box
+		#
+
+		self.set_property("face-x", 0)
+		self.set_property("face-y", 0)
+		self.set_property("face-width", 0)
+		self.set_property("face-height", 0)
+
+	def __init__(self):
+		#
+		# initialize
+		#
+
+		super(face_processor, self).__init__()
+		self.video_width, self.video_height = 0, 0
+		self.face_x, self.face_y = 0, 0
+		self.face_width, self.face_height = 0, 0
+
+		#
+		# crop video stream
+		#
+
+		self.crop = mkelem(self, None, "videocrop")
+		pad = self.crop.get_pad("sink")
+		pad.connect("notify::caps", self.new_video_caps)
+		self.add_pad(gst.GhostPad("sink", pad))
+
+		#
+		# display
+		#
+
+		mkelem(self, mkelem(self, self.crop, "ffmpegcolorspace"), "autovideosink")
+
+
+gobject.type_register(face_processor)
+gst.element_register(face_processor, face_processor.__name__)
+
+
+#
+# =============================================================================
+#
+#                                   Pipeline
+#
+# =============================================================================
+#
+
+
+class Handler(object):
+	def __init__(self, mainloop, pipeline):
+		self.mainloop = mainloop
+		self.pipeline = pipeline
+
+		self.src = None
+		self.face_processors = []
+
+		bus = pipeline.get_bus()
+		bus.add_signal_watch()
+		bus.connect("message", self.on_message)
+
+	def on_message(self, bus, message):
+		if message.type == gst.MESSAGE_ELEMENT:
+			s = message.structure
+			if s.get_name() == "facedetect":
+				self.do_facedetect_message(message.src, s)
+		elif message.type == gst.MESSAGE_EOS:
+			self.pipeline.set_state(gst.STATE_NULL)
+			self.mainloop.quit()
+		elif message.type == gst.MESSAGE_ERROR:
+			raise AssertionError
+
+	def do_facedetect_message(self, elem, s):
+		#
+		# s is a GstStructure w/ elements:
+		#
+		#   timestamp:  uint64
+		#   duration:  uint64
+		#	timestamp and duration of current video buffer
+		#   stream-time:  uint64
+		#   running-time:  uint64
+		#	of location in stream
+		#   faces:  list
+		#	containing structures with name "face" and elements:
+		#	   x
+		#	   y
+		#	   width
+		#	   height
+		#		top-left corner and extent of face
+		#	   nose->x
+		#	   nose->y
+		#	   nose->width
+		#	   nose->height
+		#		top-left corner and extent of nose
+		#	   mouth->x
+		#	   mouth->y
+		#	   mouth->width
+		#	   mouth->height
+		#		top-left corner and extent of mouth
+		#	   eyes->x
+		#	   eyes->y
+		#	   eyes->width
+		#	   eyes->height
+		#		top-left corner and extent of eyes
+		#
+
+		faces = s["faces"]
+
+		#
+		# do we need to add face processors?
+		#
+
+		if len(faces) > len(self.face_processors):
+			self.pipeline.set_state(gst.STATE_READY)
+			while len(faces) > len(self.face_processors) and self.src is not None:
+				queue = mkelem(self.pipeline, None, "queue")
+				self.face_processors.append(mkelem(self.pipeline, queue, "face_processor"))
+				queue.set_state(gst.STATE_READY)
+				self.face_processors[-1].set_state(gst.STATE_READY)
+				self.src.link(queue)
+			self.pipeline.set_state(gst.STATE_PLAYING)
+
+		#
+		# do we need to remove any?
+		#
+
+		if len(faces) < len(self.face_processors):
+			pass
+			#for face_processor in self.face_processors[len(faces):]:
+			#	self.pipeline.remove(face_processor)
+
+		#
+		# update face locations
+		#
+
+		for face_processor, face in zip(self.face_processors, faces):
+			face_processor.set_property("face-x", face["x"])
+			face_processor.set_property("face-y", face["y"])
+			face_processor.set_property("face-width", face["width"])
+			face_processor.set_property("face-height", face["height"])
+
+
+options, filenames = parse_command_line()
+
+
+pipeline = gst.Pipeline("pipeline")
+mainloop = gobject.MainLoop()
+handler = Handler(mainloop, pipeline)
+
+
+if options.input.startswith("/dev/"):
+	src = mkelem(pipeline, None, "v4l2src", device = options.input)
+	src = mkelem(pipeline, src, "ffmpegcolorspace")
+else:
+	src = mkelem(pipeline, mkelem(pipeline, None, "filesrc", location = options.input), "decodebin")
+	elem = mkelem(pipeline, None, "ffmpegcolorspace")
+	deferred_link(src, "src0", elem.get_pad("sink"))
+	src = elem
+src = mkelem(pipeline, src, "tee")
+handler.src = src
+
+head = mkelem(pipeline, src, "queue", max_size_buffers = 1, max_size_time = 0, max_size_bytes = 0, leaky = 1)
+head = mkelem(pipeline, head, "facedetect")
+mkelem(pipeline, mkelem(pipeline, head, "ffmpegcolorspace"), "autovideosink")
+
+pipeline.set_state(gst.STATE_PLAYING)
+mainloop.run()
+
