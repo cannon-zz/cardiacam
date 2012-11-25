@@ -19,7 +19,7 @@ def _gs_decorrelation(w, W, j):
     return w
 
 
-def _ica_def(X, tol, g, gprime, fun_args, maxit, w_init):
+def _ica_def(X, tol, g, gprime, gkwargs, maxit, w_init):
     """Deflationary FastICA using fun approx to neg-entropy function
 
     Used internally by FastICA.
@@ -38,8 +38,8 @@ def _ica_def(X, tol, g, gprime, fun_args, maxit, w_init):
         lim = tol + 1 
         while ((lim > tol) & (n_iterations < (maxit-1))):
             wtx = np.dot(w.T, X)
-            gwtx = g(wtx, fun_args)
-            g_wtx = gprime(wtx, fun_args)
+            gwtx = g(wtx, **gkwargs)
+            g_wtx = gprime(wtx, **gkwargs)
             w1 = (X * gwtx).mean(axis=1) - g_wtx.mean() * w
             
             _gs_decorrelation(w1, W, j)
@@ -66,7 +66,7 @@ def _sym_decorrelation(W):
     return W
 
 
-def _ica_par(X, tol, g, gprime, fun_args, maxit, w_init):
+def _ica_par(X, tol, g, gprime, gkwargs, maxit, w_init):
     """Parallel FastICA.
 
     Used internally by FastICA.
@@ -81,8 +81,8 @@ def _ica_par(X, tol, g, gprime, fun_args, maxit, w_init):
     it = 0
     while ((lim > tol) and (it < (maxit-1))):
         wtx = np.dot(W, X).A  # .A transforms to array type
-        gwtx = g(wtx, fun_args)
-        g_wtx = gprime(wtx, fun_args)
+        gwtx = g(wtx, **gkwargs)
+        g_wtx = gprime(wtx, **gkwargs)
         W1 = np.dot(gwtx, X.T)/float(p) - np.dot(np.diag(g_wtx.mean(axis=1)), W)
  
         W1 = _sym_decorrelation(W1)
@@ -95,8 +95,8 @@ def _ica_par(X, tol, g, gprime, fun_args, maxit, w_init):
 
 
 def fastica(X, n_comp=None,
-            algorithm="parallel", whiten=True, fun="logcosh", fun_prime='', 
-            fun_args={}, maxit=200, tol=1e-04, w_init=None):
+            algorithm="parallel", whiten=True, fun="logcosh", fun_prime=None, 
+            fun_kwargs={}, maxit=200, tol=1e-04, w_init=None):
     """Perform Fast Independent Component Analysis.
 
     Parameters
@@ -122,8 +122,8 @@ def fastica(X, n_comp=None,
           derivative should be provided via argument fun_prime
     fun_prime : Empty string ('') or Function
                 See fun.
-    fun_args : Optional dictionnary
-               If empty and if fun='logcosh', fun_args will take value 
+    fun_kwargs : Optional dictionary of keyword args
+               If empty and if fun='logcosh', fun_kwargs will take value 
                {'alpha' : 1.0}
     maxit : int
             Maximum number of iterations to perform
@@ -182,28 +182,25 @@ def fastica(X, n_comp=None,
     algorithm_funcs = {'parallel': _ica_par,
                        'deflation': _ica_def}
 
-    alpha = fun_args.get('alpha',1.0)
-    if (alpha < 1) or (alpha > 2):
+    if not 1 <= fun_kwargs.get('alpha', 1.0) <= 2:
         raise ValueError("alpha must be in [1,2]")
 
     if type(fun) is types.StringType:
         # Some standard nonlinear functions
         if fun == 'logcosh':
-            def g(x, fun_args):
-                alpha = fun_args.get('alpha', 1.0)
+            def g(x, alpha = 1.0):
                 return np.tanh(alpha * x)
-            def gprime(x, fun_args):
-                alpha = fun_args.get('alpha', 1.0)
+            def gprime(x, alpha = 1.0):
                 return alpha * (1 - (np.tanh(alpha * x))**2)
         elif fun == 'exp':
-            def g(x, fun_args):
+            def g(x):
                 return x * np.exp(-(x**2)/2)
-            def gprime(x, fun_args):
+            def gprime(x):
                 return (1 - x**2) * np.exp(-(x**2)/2)
         elif fun == 'cube':
-            def g(x, fun_args):
+            def g(x):
                 return x**3
-            def gprime(x, fun_args):
+            def gprime(x):
                 return 3*x**2
         else:
             raise ValueError(
@@ -212,10 +209,8 @@ def fastica(X, n_comp=None,
         raise ValueError('fun argument should be either a string '
                          '(one of logcosh, exp or cube) or a function') 
     else:
-        def g(x, fun_args):
-            return fun(x, **fun_args)
-        def gprime(x, fun_args):
-            return fun_prime(x, **fun_args)
+    	g = fun
+	gprime = fun_prime
 
     n, p = X.shape
 
@@ -250,17 +245,9 @@ def fastica(X, n_comp=None,
             raise ValueError("w_init has invalid shape -- should be %(shape)s"
                              % {'shape': (n_comp,n_comp)})
 
-    kwargs = {'tol': tol,
-              'g': g,
-              'gprime': gprime,
-              'fun_args': fun_args,
-              'maxit': maxit,
-              'w_init': w_init}
-
     func = algorithm_funcs.get(algorithm, 'parallel')
 
-    W = func(X1, **kwargs)
-    del X1
+    W = func(X1, tol = tol, g = g, gprime = gprime, gkwargs = fun_kwargs, maxit = maxit, w_init = w_init)
 
     if whiten:
         S = np.dot(np.asmatrix(W) * K, X.T)
@@ -268,5 +255,3 @@ def fastica(X, n_comp=None,
     else:
         S = np.dot(W, X.T)
         return [np.asarray(e.T) for e in (W, S)]
-
-
