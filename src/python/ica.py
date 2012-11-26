@@ -94,6 +94,12 @@ def _ica_par(X, tol, g, gprime, gkwargs, maxit, w_init):
     return W
 
 
+algorithm_funcs = {
+    'parallel': _ica_par,
+    'deflation': _ica_def
+}
+
+
 def fastica(X, n_comp=None,
             algorithm="parallel", whiten=True, fun="logcosh", fun_prime=None, 
             fun_kwargs={}, maxit=200, tol=1e-04, w_init=None):
@@ -180,9 +186,6 @@ def fastica(X, n_comp=None,
       pp. 411-430
 
     """
-    algorithm_funcs = {'parallel': _ica_par,
-                       'deflation': _ica_def}
-
     if not 1 <= fun_kwargs.get('alpha', 1.0) <= 2:
         raise ValueError("alpha must be in [1,2]")
 
