@@ -139,7 +139,8 @@ def fastica(X, n_comp=None,
     -------
     K : (p,n_comp) array
         pre-whitening matrix that projects data onto th first n.comp
-        principal components. Returned only if whiten is True
+        principal components. This is the identity matrix if whiten is
+        False.
     W : (n_comp,n_comp) array
         estimated un-mixing matrix
         The mixing matrix can be obtained by::
@@ -235,6 +236,7 @@ def fastica(X, n_comp=None,
         del v, d
         X1 = np.dot(K, X.T) # see (13.6) p.267 Here X1 is white and data in X has been projected onto a subspace by PCA
     else:
+        K = np.identity(n_comp)
         X1 = X.T
 
     if w_init is None:
@@ -242,8 +244,7 @@ def fastica(X, n_comp=None,
     else:
         w_init = np.asarray(w_init)
         if w_init.shape != (n_comp,n_comp):
-            raise ValueError("w_init has invalid shape -- should be %(shape)s"
-                             % {'shape': (n_comp,n_comp)})
+            raise ValueError("w_init has invalid shape -- should be %(shape)s" % {'shape': (n_comp,n_comp)})
 
     func = algorithm_funcs.get(algorithm, 'parallel')
 
@@ -251,7 +252,7 @@ def fastica(X, n_comp=None,
 
     if whiten:
         S = np.dot(np.asmatrix(W) * K, X.T)
-        return [np.asarray(e.T) for e in (K, W, S)]
     else:
         S = np.dot(W, X.T)
-        return [np.asarray(e.T) for e in (W, S)]
+
+    return [np.asarray(e.T) for e in (K, W, S)]
