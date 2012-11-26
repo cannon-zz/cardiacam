@@ -118,12 +118,12 @@ class video2rgb(gst.BaseTransform):
 		outdata = numpy.frombuffer(outbuf, dtype = timeseries_dtype)
 
 		#
-		# sum RGB values
+		# sum RGB values, rescale to [0, 1]
 		#
 
-		outdata["r"][0] = indata["r"].sum()
-		outdata["g"][0] = indata["g"].sum()
-		outdata["b"][0] = indata["b"].sum()
+		outdata["r"][0] = indata["r"].sum() / (255.0 * self.width * self.height)
+		outdata["g"][0] = indata["g"].sum() / (255.0 * self.width * self.height)
+		outdata["b"][0] = indata["b"].sum() / (255.0 * self.width * self.height)
 
 		#
 		# set metadata on output buffer
