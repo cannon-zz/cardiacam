@@ -246,9 +246,7 @@ def fastica(X, n_comp=None,
         if w_init.shape != (n_comp,n_comp):
             raise ValueError("w_init has invalid shape -- should be %(shape)s" % {'shape': (n_comp,n_comp)})
 
-    func = algorithm_funcs.get(algorithm, 'parallel')
-
-    W = func(X1, tol = tol, g = g, gprime = gprime, gkwargs = fun_kwargs, maxit = maxit, w_init = w_init)
+    W = algorithm_funcs[algorithm](X1, tol = tol, g = g, gprime = gprime, gkwargs = fun_kwargs, maxit = maxit, w_init = w_init)
 
     if whiten:
         S = np.dot(np.asmatrix(W) * K, X.T)
