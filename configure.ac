@@ -8,6 +8,7 @@ AC_CONFIG_MACRO_DIR([gnuscripts])
 AM_INIT_AUTOMAKE([1.9 tar-ustar foreign])
 AC_CONFIG_FILES([ \
 	Makefile \
+	gnuscripts/Makefile \
 	src/Makefile \
 	src/bin/Makefile \
 	src/gst/Makefile \
