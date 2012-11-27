@@ -93,6 +93,11 @@ class video2rgb(gst.BaseTransform):
 		self.framerate = incaps[0]["framerate"]
 		self.width = incaps[0]["width"]
 		self.height = incaps[0]["height"]
+		y, x = numpy.indices((self.height, self.width), dtype = "double")
+		x = 2 * x / (self.width - 1) - 1
+		y = 2 * y / (self.height - 1) - 1
+		self.mask = (x**2 + y**2) > 1
+		self.max_sum = 255.0 * (~self.mask).sum()
 		return True
 
 
@@ -113,17 +118,18 @@ class video2rgb(gst.BaseTransform):
 		# works but doesn't always do a zero-copy transform.
 		#
 
-		indata = numpy.frombuffer(inbuf, dtype = video_dtype)
+		indata = numpy.ma.frombuffer(inbuf, dtype = video_dtype)
 		indata.shape = (self.height, self.width)
+		indata.mask = self.mask
 		outdata = numpy.frombuffer(outbuf, dtype = timeseries_dtype)
 
 		#
 		# sum RGB values, rescale to [0, 1]
 		#
 
-		outdata["r"][0] = indata["r"].sum() / (255.0 * self.width * self.height)
-		outdata["g"][0] = indata["g"].sum() / (255.0 * self.width * self.height)
-		outdata["b"][0] = indata["b"].sum() / (255.0 * self.width * self.height)
+		outdata["r"][0] = indata["r"].sum() / self.max_sum
+		outdata["g"][0] = indata["g"].sum() / self.max_sum
+		outdata["b"][0] = indata["b"].sum() / self.max_sum
 
 		#
 		# set metadata on output buffer
