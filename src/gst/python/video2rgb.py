@@ -48,6 +48,13 @@ class video2rgb(gst.BaseTransform):
 	)
 
 	__gproperties__ = {
+		"gamma": (
+			gobject.TYPE_DOUBLE,
+			"gamma",
+			"Gamma factor.",
+			0, gobject.G_MAXDOUBLE, 1.0,
+			gobject.PARAM_READWRITE | gobject.PARAM_CONSTRUCT
+		)
 	}
 
 	__gsttemplates__ = (
@@ -82,11 +89,16 @@ class video2rgb(gst.BaseTransform):
 
 
 	def do_set_property(self, prop, val):
-		raise AssertError("no property %s" % prop.name)
+		if prop.name == "gamma":
+			self.gamma = val
+		else:
+			raise AssertionError("no property %s" % prop.name)
 
 
 	def do_get_property(self, prop):
-		raise AssertError("no property %s" % prop.name)
+		if prop.name == "gamma":
+			return self.gamma
+		raise AssertionError("no property %s" % prop.name)
 
 
 	def do_set_caps(self, incaps, outcaps):
@@ -97,7 +109,6 @@ class video2rgb(gst.BaseTransform):
 		x = 2 * x / (self.width - 1) - 1
 		y = 2 * y / (self.height - 1) - 1
 		self.mask = (x**2 + y**2) > 1
-		self.max_sum = 255.0 * (~self.mask).sum()
 		return True
 
 
@@ -124,12 +135,13 @@ class video2rgb(gst.BaseTransform):
 		outdata = numpy.frombuffer(outbuf, dtype = timeseries_dtype)
 
 		#
-		# sum RGB values, rescale to [0, 1]
+		# map to [0, 1], apply gamma correction and average RGB
+		# values
 		#
 
-		outdata["r"][0] = indata["r"].sum() / self.max_sum
-		outdata["g"][0] = indata["g"].sum() / self.max_sum
-		outdata["b"][0] = indata["b"].sum() / self.max_sum
+		outdata["r"][0] = ((indata["r"] / 255.0)**self.gamma).mean()
+		outdata["g"][0] = ((indata["g"] / 255.0)**self.gamma).mean()
+		outdata["b"][0] = ((indata["b"] / 255.0)**self.gamma).mean()
 
 		#
 		# set metadata on output buffer
