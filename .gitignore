@@ -15,6 +15,7 @@ config.status
 configure
 gnuscripts/config.guess
 gnuscripts/config.sub
+gnuscripts/depcomp
 gnuscripts/install-sh
 gnuscripts/libtool.m4
 gnuscripts/ltmain.sh
