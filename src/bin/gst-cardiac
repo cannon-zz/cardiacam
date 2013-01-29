@@ -143,7 +143,7 @@ class face_processor(gst.Bin):
 		elif prop.name == "face-height":
 			self.face_height = val
 		else:
-			raise AssertError
+			raise AssertionError
 
 		#
 		# adjust video crop box.  if the face's width or height is
@@ -171,7 +171,7 @@ class face_processor(gst.Bin):
 		elif prop.name == "face-height":
 			return self.face_height
 		else:
-			raise AssertError
+			raise AssertionError
 
 	def new_video_caps(self, pad, pspec):
 		s = pad.get_property("caps")[0]
@@ -247,7 +247,9 @@ class Handler(object):
 			self.pipeline.set_state(gst.STATE_NULL)
 			self.mainloop.quit()
 		elif message.type == gst.MESSAGE_ERROR:
-			raise AssertionError
+			gerr, dbgmsg = message.parse_error()
+			print >>sys.stderr, "error (%s:%d '%s'): %s" % (gerr.domain, gerr.code, gerr.message, dbgmsg)
+			sys.exit(1)
 
 	def do_facedetect_message(self, elem, s):
 		#
@@ -335,8 +337,7 @@ else:
 	elem = mkelem(pipeline, None, "ffmpegcolorspace")
 	deferred_link(src, "src0", elem.get_pad("sink"))
 	src = elem
-src = mkelem(pipeline, src, "tee")
-handler.src = src
+handler.src = src = mkelem(pipeline, src, "tee")
 
 head = mkelem(pipeline, src, "queue", max_size_buffers = 1, max_size_time = 0, max_size_bytes = 0, leaky = 1)
 head = mkelem(pipeline, head, "facedetect")
