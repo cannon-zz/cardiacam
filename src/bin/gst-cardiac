@@ -72,7 +72,7 @@ def parse_command_line():
 	parser = OptionParser(
 		version = "%prog ??",
 		usage = "%prog [options] filename",
-		description = "Convert a LIGO Light Weight XML file containing software injection descriptions into an audio file."
+		description = "Extract cardiac pulse from a video of a patient."
 	)
 	parser.add_option("--input", metavar = "filename", default = "/dev/video0", help = "Set the name of the input file (default = \"/dev/video0\").  If the filename starts with \"/dev/\" then it is assumed to be a V4L device.")
 
