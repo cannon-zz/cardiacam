@@ -148,7 +148,8 @@ class video2rgb(gst.BaseTransform):
 		#
 
 		outbuf.offset = self.framecount
-		outbuf.offset_end = self.framecount + 1
+		self.framecount += 1
+		outbuf.offset_end = self.framecount
 		outbuf.timestamp = inbuf.timestamp
 		outbuf.duration = inbuf.duration
 
@@ -156,7 +157,6 @@ class video2rgb(gst.BaseTransform):
 		# done
 		#
 
-		self.framecount += 1
 		return gst.FLOW_OK
 
 
