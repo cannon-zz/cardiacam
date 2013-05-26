@@ -103,21 +103,17 @@ gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outcaps)
 {
 	GstRateFaker *element = GST_RATE_FAKER(trans);
 	GstStructure *s;
-	gint inrate_num, inrate_den;
-	gint outrate_num, outrate_den;
+	gint inrate_num, inrate_den = 1;
+	gint outrate_num, outrate_den = 1;
 	gboolean success = TRUE;
 
 	s = gst_caps_get_structure(incaps, 0);
-	if(gst_structure_get_int(s, "rate", &inrate_num))
-		inrate_den = 1;
-	else if(!gst_structure_get_fraction(s, "rate", &inrate_num, &inrate_den))
-		success = FALSE;
+	if(!gst_structure_get_int(s, "rate", &inrate_num))
+		success &= gst_structure_get_fraction(s, "rate", &inrate_num, &inrate_den);
 
 	s = gst_caps_get_structure(outcaps, 0);
-	if(gst_structure_get_int(s, "rate", &outrate_num))
-		outrate_den = 1;
-	else if(!gst_structure_get_fraction(s, "rate", &outrate_num, &outrate_den))
-		success = FALSE;
+	if(!gst_structure_get_int(s, "rate", &outrate_num))
+		success &= gst_structure_get_fraction(s, "rate", &outrate_num, &outrate_den);
 
 	if(success) {
 		gint gcd;
