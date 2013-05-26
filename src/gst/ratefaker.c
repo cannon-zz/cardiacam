@@ -172,7 +172,7 @@ GstFlowReturn transform_ip(GstBaseTransform *trans, GstBuffer *buf)
 	GstFlowReturn result = GST_FLOW_OK;
 
 	if(GST_BUFFER_TIMESTAMP_IS_VALID(buf) && GST_BUFFER_DURATION_IS_VALID(buf)) {
-		GstClockTime timestamp = GST_BUFFER_DURATION(buf);
+		GstClockTime timestamp = GST_BUFFER_TIMESTAMP(buf);
 		GstClockTime duration = GST_BUFFER_DURATION(buf);
 
 		GST_BUFFER_TIMESTAMP(buf) = gst_util_uint64_scale_int_round(timestamp, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
@@ -181,6 +181,8 @@ GstFlowReturn transform_ip(GstBaseTransform *trans, GstBuffer *buf)
 		GST_BUFFER_TIMESTAMP(buf) = gst_util_uint64_scale_int_round(GST_BUFFER_TIMESTAMP(buf), element->inrate_over_outrate_num, element->inrate_over_outrate_den);
 	else if(GST_BUFFER_DURATION_IS_VALID(buf))
 		GST_BUFFER_DURATION(buf) = gst_util_uint64_scale_int_round(GST_BUFFER_DURATION(buf), element->inrate_over_outrate_num, element->inrate_over_outrate_den);
+
+	gst_buffer_set_caps(buf, GST_PAD_CAPS(GST_BASE_TRANSFORM_SRC_PAD(trans)));
 
 	return result;
 }
@@ -224,13 +226,13 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE(
 	GST_PAD_ALWAYS,
 	GST_STATIC_CAPS(
 		"audio/x-raw-float, " \
-		"channels = (int) [1, MAX], " \
-		"rate = (int) [1, MAX], " \
-		"width = (int) {32, 64}; " \
+			"channels = (int) [1, MAX], " \
+			"rate = (int) [1, MAX], " \
+			"width = (int) {32, 64}; " \
 		"audio/x-raw-float, " \
-		"channels = (int) [1, MAX], " \
-		"rate = (fraction) [0/1, MAX], " \
-		"width = (int) {32, 64}"
+			"channels = (int) [1, MAX], " \
+			"rate = (fraction) [0/1, MAX], " \
+			"width = (int) {32, 64}"
 	)
 );
 
