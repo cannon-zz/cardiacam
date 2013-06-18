@@ -1,5 +1,5 @@
 /*
- * GstRateFaker
+ * GstVideoRateFaker
  *
  * Copyright (C) 2013  Kipp Cannon
  *
@@ -33,7 +33,7 @@
 #include <gst/base/gstbasetransform.h>
 
 
-#include <ratefaker.h>
+#include <videoratefaker.h>
 
 
 /*
@@ -45,7 +45,7 @@
  */
 
 
-GST_BOILERPLATE(GstRateFaker, gst_rate_faker, GstBaseTransform, GST_TYPE_BASE_TRANSFORM);
+GST_BOILERPLATE(GstVideoRateFaker, gst_video_rate_faker, GstBaseTransform, GST_TYPE_BASE_TRANSFORM);
 
 
 /*
@@ -59,61 +59,29 @@ GST_BOILERPLATE(GstRateFaker, gst_rate_faker, GstBaseTransform, GST_TYPE_BASE_TR
 
 static GstCaps *transform_caps(GstBaseTransform *trans, GstPadDirection direction, GstCaps *caps)
 {
-	GstCaps *othercaps = NULL;
+	GstCaps *othercaps = gst_caps_copy(caps);
 	guint i;
 
-	switch(direction) {
-	case GST_PAD_SRC:
-		/*
-		 * sink pad must have same channel count and sample width
-		 * as source pad
-		 */
-
-		othercaps = gst_caps_copy(gst_pad_get_pad_template_caps(GST_BASE_TRANSFORM_SINK_PAD(trans)));
-		for(i = 0; i < gst_caps_get_size(othercaps); i++) {
-			gst_structure_set_value(gst_caps_get_structure(othercaps, i), "channels", gst_structure_get_value(gst_caps_get_structure(caps, 0), "channels"));
-			gst_structure_set_value(gst_caps_get_structure(othercaps, i), "width", gst_structure_get_value(gst_caps_get_structure(caps, 0), "width"));
-		}
-		break;
-
-	case GST_PAD_SINK:
-		/*
-		 * source pad must have same channel count and sample width
-		 * as sink pad
-		 */
-
-		othercaps = gst_caps_copy(gst_pad_get_pad_template_caps(GST_BASE_TRANSFORM_SRC_PAD(trans)));
-		for(i = 0; i < gst_caps_get_size(caps); i++) {
-			gst_structure_set_value(gst_caps_get_structure(othercaps, i), "channels", gst_structure_get_value(gst_caps_get_structure(caps, 0), "channels"));
-			gst_structure_set_value(gst_caps_get_structure(othercaps, i), "width", gst_structure_get_value(gst_caps_get_structure(caps, 0), "width"));
-		}
-		break;
-
-	case GST_PAD_UNKNOWN:
-		GST_ELEMENT_ERROR(trans, CORE, NEGOTIATION, (NULL), ("invalid direction GST_PAD_UNKNOWN"));
-		gst_caps_unref(caps);
-		return GST_CAPS_NONE;
-	}
+	for(i = 0; i < gst_caps_get_size(othercaps); i++)
+		gst_structure_set(gst_caps_get_structure(othercaps, i), "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1, NULL);
 
 	return othercaps;
 }
 
 
-gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outcaps)
+static gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outcaps)
 {
-	GstRateFaker *element = GST_RATE_FAKER(trans);
+	GstVideoRateFaker *element = GST_VIDEO_RATE_FAKER(trans);
 	GstStructure *s;
 	gint inrate_num, inrate_den = 1;
 	gint outrate_num, outrate_den = 1;
 	gboolean success = TRUE;
 
 	s = gst_caps_get_structure(incaps, 0);
-	if(!gst_structure_get_int(s, "rate", &inrate_num))
-		success &= gst_structure_get_fraction(s, "rate", &inrate_num, &inrate_den);
+	success &= gst_structure_get_fraction(s, "framerate", &inrate_num, &inrate_den);
 
 	s = gst_caps_get_structure(outcaps, 0);
-	if(!gst_structure_get_int(s, "rate", &outrate_num))
-		success &= gst_structure_get_fraction(s, "rate", &outrate_num, &outrate_den);
+	success &= gst_structure_get_fraction(s, "framerate", &outrate_num, &outrate_den);
 
 	if(success) {
 		gint gcd;
@@ -131,9 +99,9 @@ gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outcaps)
 }
 
 
-gboolean event(GstBaseTransform *trans, GstEvent *event)
+static gboolean event(GstBaseTransform *trans, GstEvent *event)
 {
-	GstRateFaker *element = GST_RATE_FAKER(trans);
+	GstVideoRateFaker *element = GST_VIDEO_RATE_FAKER(trans);
 
 	switch(GST_EVENT_TYPE(event)) {
 	case GST_EVENT_NEWSEGMENT: {
@@ -162,9 +130,9 @@ gboolean event(GstBaseTransform *trans, GstEvent *event)
 }
 
 
-GstFlowReturn transform_ip(GstBaseTransform *trans, GstBuffer *buf)
+static GstFlowReturn transform_ip(GstBaseTransform *trans, GstBuffer *buf)
 {
-	GstRateFaker *element = GST_RATE_FAKER(trans);
+	GstVideoRateFaker *element = GST_VIDEO_RATE_FAKER(trans);
 	GstFlowReturn result = GST_FLOW_OK;
 
 	if(GST_BUFFER_TIMESTAMP_IS_VALID(buf) && GST_BUFFER_DURATION_IS_VALID(buf)) {
@@ -193,7 +161,7 @@ GstFlowReturn transform_ip(GstBaseTransform *trans, GstBuffer *buf)
  */
 
 
-static void gst_rate_faker_base_init(gpointer klass)
+static void gst_video_rate_faker_base_init(gpointer klass)
 {
 	/* no-op */
 }
@@ -204,14 +172,11 @@ static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE(
 	GST_PAD_SINK,
 	GST_PAD_ALWAYS,
 	GST_STATIC_CAPS(
-		"audio/x-raw-float, " \
-			"channels = (int) [1, MAX], " \
-			"rate = (int) [1, MAX], " \
-			"width = (int) {32, 64}; " \
-		"audio/x-raw-float, " \
-			"channels = (int) [1, MAX], " \
-			"rate = (fraction) [0/1, MAX], " \
-			"width = (int) {32, 64}"
+		"video/x-raw-yuv; " \
+		"video/x-raw-rgb; " \
+		"video/x-raw-gray; " \
+		"image/jpeg; " \
+		"image/png"
 	)
 );
 
@@ -221,19 +186,16 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE(
 	GST_PAD_SRC,
 	GST_PAD_ALWAYS,
 	GST_STATIC_CAPS(
-		"audio/x-raw-float, " \
-			"channels = (int) [1, MAX], " \
-			"rate = (int) [1, MAX], " \
-			"width = (int) {32, 64}; " \
-		"audio/x-raw-float, " \
-			"channels = (int) [1, MAX], " \
-			"rate = (fraction) [0/1, MAX], " \
-			"width = (int) {32, 64}"
+		"video/x-raw-yuv; " \
+		"video/x-raw-rgb; " \
+		"video/x-raw-gray; " \
+		"image/jpeg; " \
+		"image/png"
 	)
 );
 
 
-static void gst_rate_faker_class_init(GstRateFakerClass *klass)
+static void gst_video_rate_faker_class_init(GstVideoRateFakerClass *klass)
 {
 	GstElementClass *element_class = GST_ELEMENT_CLASS(klass);
 	GstBaseTransformClass *transform_class = GST_BASE_TRANSFORM_CLASS(klass);
@@ -245,9 +207,9 @@ static void gst_rate_faker_class_init(GstRateFakerClass *klass)
 	transform_class->passthrough_on_same_caps = TRUE;
 
 	gst_element_class_set_details_simple(element_class, 
-		"Audio rate faker",
-		"Filter/Audio",
-		"Adjusts segments and audio buffer metadata to assign a new sample rate.  Allows input and/or output streams to have rational sample rates.",
+		"Video rate faker",
+		"Filter/Video",
+		"Adjusts segments and video buffer metadata to assign a new frame rate.",
 		"Kipp Cannon <kipp.cannon@ligo.org>"
 	);
 
@@ -256,7 +218,7 @@ static void gst_rate_faker_class_init(GstRateFakerClass *klass)
 }
 
 
-static void gst_rate_faker_init(GstRateFaker *element, GstRateFakerClass *klass)
+static void gst_video_rate_faker_init(GstVideoRateFaker *element, GstVideoRateFakerClass *klass)
 {
 	gst_base_transform_set_gap_aware(GST_BASE_TRANSFORM(element), TRUE);
 }

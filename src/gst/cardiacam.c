@@ -40,7 +40,8 @@
 
 
 #include <audiorationalresample.h>
-#include <ratefaker.h>
+#include <audioratefaker.h>
+#include <videoratefaker.h>
 
 
 /*
@@ -59,7 +60,8 @@ static gboolean plugin_init(GstPlugin *plugin)
 		GType type;
 	} *element, elements[] = {
 		{"audiorationalresample", GST_TYPE_AUDIO_RATIONALRESAMPLE},
-		{"audioratefaker", GST_TYPE_RATE_FAKER},
+		{"audioratefaker", GST_TYPE_AUDIO_RATE_FAKER},
+		{"videoratefaker", GST_TYPE_VIDEO_RATE_FAKER},
 		{NULL, 0},
 	};
 

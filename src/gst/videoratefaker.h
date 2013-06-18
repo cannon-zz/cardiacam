@@ -1,5 +1,5 @@
 /*
- * GstRateFaker
+ * GstVideoRateFaker
  *
  * Copyright (C) 2013  Kipp Cannon
  *
@@ -19,8 +19,8 @@
  */
 
 
-#ifndef __RATE_FAKER_H__
-#define __RATE_FAKER_H__
+#ifndef __VIDEO_RATE_FAKER_H__
+#define __VIDEO_RATE_FAKER_H__
 
 
 /*
@@ -49,35 +49,35 @@ G_BEGIN_DECLS
  */
 
 
-#define GST_TYPE_RATE_FAKER \
-	(gst_rate_faker_get_type())
-#define GST_RATE_FAKER(obj) \
-	(G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_RATE_FAKER, GstRateFaker))
-#define GST_RATE_FAKER_CLASS(klass) \
-	(G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_RATE_FAKER, GstRateFakerClass))
-#define GST_RATE_FAKER_GET_CLASS(obj) \
-	(G_TYPE_INSTANCE_GET_CLASS((obj), GST_TYPE_RATE_FAKER, GstRateFakerClass))
-#define GST_IS_RATE_FAKER(obj) \
-	(G_TYPE_CHECK_INSTANCE_TYPE((obj), GST_TYPE_RATE_FAKER))
-#define GST_IS_RATE_FAKER_CLASS(klass) \
-	(G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_RATE_FAKER))
+#define GST_TYPE_VIDEO_RATE_FAKER \
+	(gst_video_rate_faker_get_type())
+#define GST_VIDEO_RATE_FAKER(obj) \
+	(G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_VIDEO_RATE_FAKER, GstVideoRateFaker))
+#define GST_VIDEO_RATE_FAKER_CLASS(klass) \
+	(G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_VIDEO_RATE_FAKER, GstVideoRateFakerClass))
+#define GST_VIDEO_RATE_FAKER_GET_CLASS(obj) \
+	(G_TYPE_INSTANCE_GET_CLASS((obj), GST_TYPE_VIDEO_RATE_FAKER, GstVideoRateFakerClass))
+#define GST_IS_VIDEO_RATE_FAKER(obj) \
+	(G_TYPE_CHECK_INSTANCE_TYPE((obj), GST_TYPE_VIDEO_RATE_FAKER))
+#define GST_IS_VIDEO_RATE_FAKER_CLASS(klass) \
+	(G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_VIDEO_RATE_FAKER))
 
 
-typedef struct _GstRateFakerClass GstRateFakerClass;
-typedef struct _GstRateFaker GstRateFaker;
+typedef struct _GstVideoRateFakerClass GstVideoRateFakerClass;
+typedef struct _GstVideoRateFaker GstVideoRateFaker;
 
 
-struct _GstRateFakerClass {
+struct _GstVideoRateFakerClass {
 	GstBaseTransformClass parent_class;
 };
 
 
 /**
- * GstAudioRationalResample
+ * GstVideoRationalResample
  */
 
 
-struct _GstRateFaker {
+struct _GstVideoRateFaker {
 	GstBaseTransform basetransform;
 
 	gint inrate_over_outrate_num;
@@ -94,10 +94,10 @@ struct _GstRateFaker {
  */
 
 
-GType gst_rate_faker_get_type(void);
+GType gst_video_rate_faker_get_type(void);
 
 
 G_END_DECLS
 
 
-#endif	/* __RATE_FAKER_H__ */
+#endif	/* __VIDEO_RATE_FAKER_H__ */
