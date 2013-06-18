@@ -72,16 +72,12 @@ static GstCaps *transform_caps(GstBaseTransform *trans, GstPadDirection directio
 static gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outcaps)
 {
 	GstVideoRateFaker *element = GST_VIDEO_RATE_FAKER(trans);
-	GstStructure *s;
-	gint inrate_num, inrate_den = 1;
-	gint outrate_num, outrate_den = 1;
+	gint inrate_num, inrate_den;
+	gint outrate_num, outrate_den;
 	gboolean success = TRUE;
 
-	s = gst_caps_get_structure(incaps, 0);
-	success &= gst_structure_get_fraction(s, "framerate", &inrate_num, &inrate_den);
-
-	s = gst_caps_get_structure(outcaps, 0);
-	success &= gst_structure_get_fraction(s, "framerate", &outrate_num, &outrate_den);
+	success &= gst_structure_get_fraction(gst_caps_get_structure(incaps, 0), "framerate", &inrate_num, &inrate_den);
+	success &= gst_structure_get_fraction(gst_caps_get_structure(outcaps, 0), "framerate", &outrate_num, &outrate_den);
 
 	if(success) {
 		gint gcd;
