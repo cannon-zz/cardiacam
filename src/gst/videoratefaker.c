@@ -100,25 +100,11 @@ static gboolean event(GstBaseTransform *trans, GstEvent *event)
 	GstVideoRateFaker *element = GST_VIDEO_RATE_FAKER(trans);
 
 	switch(GST_EVENT_TYPE(event)) {
-	case GST_EVENT_NEWSEGMENT: {
-		gboolean update;
-		gdouble rate;
-		GstFormat format;
-		gint64 start, stop, position;
-		gst_event_parse_new_segment(event, &update, &rate, &format, &start, &stop, &position);
-		if(format == GST_FORMAT_TIME) {
-			if(GST_CLOCK_TIME_IS_VALID(start))
-				start = gst_util_uint64_scale_int_round(start, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
-			if(GST_CLOCK_TIME_IS_VALID(stop))
-				stop = gst_util_uint64_scale_int_round(stop, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
-			if(GST_CLOCK_TIME_IS_VALID(position))
-				position = gst_util_uint64_scale_int_round(position, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
-			gst_event_unref(event);
-			event = gst_event_new_new_segment(update, rate, format, start, stop, position);
-		}
-		gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(trans), event);
+	case GST_EVENT_NEWSEGMENT:
+		if(element->last_segment)
+			gst_event_unref(element->last_segment);
+		element->last_segment = event;
 		return FALSE;
-	}
 
 	default:
 		return TRUE;
@@ -130,6 +116,26 @@ static GstFlowReturn transform_ip(GstBaseTransform *trans, GstBuffer *buf)
 {
 	GstVideoRateFaker *element = GST_VIDEO_RATE_FAKER(trans);
 	GstFlowReturn result = GST_FLOW_OK;
+
+	if(element->last_segment) {
+		gboolean update;
+		gdouble rate;
+		GstFormat format;
+		gint64 start, stop, position;
+		gst_event_parse_new_segment(element->last_segment, &update, &rate, &format, &start, &stop, &position);
+		if(format == GST_FORMAT_TIME) {
+			if(GST_CLOCK_TIME_IS_VALID(start))
+				start = gst_util_uint64_scale_int_round(start, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
+			if(GST_CLOCK_TIME_IS_VALID(stop))
+				stop = gst_util_uint64_scale_int_round(stop, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
+			if(GST_CLOCK_TIME_IS_VALID(position))
+				position = gst_util_uint64_scale_int_round(position, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
+			gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(trans), gst_event_new_new_segment(update, rate, format, start, stop, position));
+			gst_event_unref(element->last_segment);
+		} else
+			gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(trans), element->last_segment);
+		element->last_segment = NULL;
+	}
 
 	if(GST_BUFFER_TIMESTAMP_IS_VALID(buf) && GST_BUFFER_DURATION_IS_VALID(buf)) {
 		GstClockTime timestamp = GST_BUFFER_TIMESTAMP(buf);
@@ -155,6 +161,16 @@ static GstFlowReturn transform_ip(GstBaseTransform *trans, GstBuffer *buf)
  *
  * ============================================================================
  */
+
+
+static void finalize(GObject *object)
+{
+	GstVideoRateFaker *element = GST_VIDEO_RATE_FAKER(object);
+
+	if(element->last_segment)
+		gst_event_unref(element->last_segment);
+	element->last_segment = NULL;
+}
 
 
 static void gst_video_rate_faker_base_init(gpointer klass)
@@ -193,8 +209,11 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE(
 
 static void gst_video_rate_faker_class_init(GstVideoRateFakerClass *klass)
 {
+	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	GstElementClass *element_class = GST_ELEMENT_CLASS(klass);
 	GstBaseTransformClass *transform_class = GST_BASE_TRANSFORM_CLASS(klass);
+
+	object_class->finalize = GST_DEBUG_FUNCPTR(finalize);
 
 	transform_class->set_caps = GST_DEBUG_FUNCPTR(set_caps);
 	transform_class->transform_caps = GST_DEBUG_FUNCPTR(transform_caps);

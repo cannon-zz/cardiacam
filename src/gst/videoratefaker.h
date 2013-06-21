@@ -80,6 +80,8 @@ struct _GstVideoRateFakerClass {
 struct _GstVideoRateFaker {
 	GstBaseTransform basetransform;
 
+	GstEvent *last_segment;
+
 	gint inrate_over_outrate_num;
 	gint inrate_over_outrate_den;
 };
