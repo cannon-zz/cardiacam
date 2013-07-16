@@ -17,7 +17,12 @@ __version__ = "FIXME"
 __date__ = "FIXME"
 
 
-timeseries_dtype = numpy.dtype({"names": ["r", "g", "b"], "formats": [numpy.double, numpy.double, numpy.double]})
+def stride(caps):
+	struct = caps[0]
+	stride = struct["width"] * struct["bpp"] // 8
+	if stride % 4:
+		stride += 4 - stride % 4;
+	return stride
 
 
 def get_unit_size(caps):
@@ -26,11 +31,16 @@ def get_unit_size(caps):
 	if name in ("audio/x-raw-complex", "audio/x-raw-float", "audio/x-raw-int"):
 		return struct["channels"] * struct["width"] // 8
 	elif name == "video/x-raw-rgb":
-		return struct["width"] * struct["height"] * struct["bpp"] // 8
+		return struct["height"] * stride(caps)
 	raise ValueError(caps)
 
 
 class video2rgb(gst.BaseTransform):
+	timeseries_dtype = numpy.dtype({
+		"names": ["r", "g", "b"],
+		"formats": [numpy.double, numpy.double, numpy.double]
+	})
+
 	__gstdetails__ = (
 		"Video to RGB time series",
 		"Filter/Video",
@@ -74,9 +84,7 @@ class video2rgb(gst.BaseTransform):
 
 
 	def __init__(self):
-		gst.BaseTransform.__init__(self)
-		self.get_pad("sink").use_fixed_caps()
-		self.get_pad("src").use_fixed_caps()
+		super(video2rgb, self).__init__()
 
 
 	def do_set_property(self, prop, val):
@@ -95,6 +103,7 @@ class video2rgb(gst.BaseTransform):
 	def do_set_caps(self, incaps, outcaps):
 		self.width = incaps[0]["width"]
 		self.height = incaps[0]["height"]
+		self.stride = stride(incaps)
 		y, x = numpy.indices((self.height, self.width), dtype = "double")
 		x = 2 * x / (self.width - 1) - 1
 		y = 2 * y / (self.height - 1) - 1
@@ -119,19 +128,17 @@ class video2rgb(gst.BaseTransform):
 		# works but doesn't always do a zero-copy transform.
 		#
 
-		indata = numpy.ma.frombuffer(inbuf, dtype = video_dtype)
-		indata.shape = (self.height, self.width)
-		indata.mask = self.mask
-		outdata = numpy.frombuffer(outbuf, dtype = timeseries_dtype)
+		indata = numpy.ma.MaskedArray(data = numpy.ndarray(buffer = inbuf, shape = (self.height, self.width), strides = (self.stride, 3), dtype = video_dtype), mask = self.mask)
+		outdata = numpy.frombuffer(outbuf, dtype = self.timeseries_dtype)
 
 		#
-		# map to [0, 1], apply gamma correction and average RGB
-		# values
+		# map colour component values to [0, 1], apply gamma
+		# correction and average
 		#
 
-		outdata["r"][0] = ((indata["r"] / 255.0)**self.gamma).mean()
-		outdata["g"][0] = ((indata["g"] / 255.0)**self.gamma).mean()
-		outdata["b"][0] = ((indata["b"] / 255.0)**self.gamma).mean()
+		outdata["r"] = ((indata["r"] / 255.0)**self.gamma).mean()
+		outdata["g"] = ((indata["g"] / 255.0)**self.gamma).mean()
+		outdata["b"] = ((indata["b"] / 255.0)**self.gamma).mean()
 
 		#
 		# set metadata on output buffer
