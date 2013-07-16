@@ -101,16 +101,17 @@ static gboolean setcaps(GstPad *pad, GstCaps *caps)
 		success &= gst_structure_get_fraction(s, "rate", &outrate_num, &outrate_den);
 
 	if(success) {
-		/* smallest multiplicative factor that makes both in and
-		 * out rates integers */
-		gint lcm = inrate_den / gst_util_greatest_common_divisor(inrate_den, outrate_den) * outrate_den;
+		/* least common multiple of denominators = smallest
+		 * multiplicative factor that makes both in and out rates
+		 * integers */
+		gint den_lcm = inrate_den / gst_util_greatest_common_divisor(inrate_den, outrate_den) * outrate_den;
 
-		GST_DEBUG_OBJECT(element, "input rate %d/%d, output rate %d/%d, least common multiple = %d", inrate_num, inrate_den, outrate_num, outrate_den, lcm);
+		GST_DEBUG_OBJECT(element, "input rate %d/%d, output rate %d/%d, denominator least common multiple = %d", inrate_num, inrate_den, outrate_num, outrate_den, den_lcm);
 
-		/* multiply in and out rates by lcm.  makes both integers,
+		/* multiply in and out rates by den_lcm.  makes both integers,
 		 * so can evalute ratios */
-		inrate_num *= lcm / inrate_den;
-		outrate_num *= lcm / outrate_den;
+		inrate_num *= den_lcm / inrate_den;
+		outrate_num *= den_lcm / outrate_den;
 
 		GST_DEBUG_OBJECT(element, "input rate rescaled to %d, output rate rescaled to %d", inrate_num, outrate_num);
 
@@ -205,7 +206,6 @@ static void gst_audio_rationalresample_class_init(GstAudioRationalResampleClass 
 	GstElementClass *element_class = GST_ELEMENT_CLASS(klass);
 
 	gobject_class->finalize = GST_DEBUG_FUNCPTR(finalize);
-
 
 	gst_element_class_set_details_simple(element_class,
 		"Rational sample rate audio resampler",
