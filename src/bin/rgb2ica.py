@@ -4,9 +4,9 @@ from cardiacam import ica
 
 # rgb
 wguess = numpy.array(
-	[[ 0.88729223, -0.45446835, -0.07855585],
-	 [-0.32837411, -0.50290796, -0.79953363],
-	 [ 0.32385637,  0.73521568, -0.59546197]]
+	[[ 0.05648833,  0.97166715,  0.22950386],
+	 [ 0.50415065,  0.17065149, -0.84658738],
+	 [ 0.86176632, -0.16352682,  0.48022681]]
 )
 # default
 #wguess = None
@@ -30,12 +30,6 @@ if True:
 	# replace RGB time series with its 1st derivative to whiten the
 	# background noise spectrum
 	rgb, t = differentiate(rgb, t)
-
-	# excise glitch
-	kmin = bisect.bisect(t, 85.0)
-	kmax = bisect.bisect(t, 86.0)
-	rgb = numpy.delete(rgb, numpy.s_[kmin:kmax], 0)
-	t = numpy.delete(t, numpy.s_[kmin:kmax], 0)
 
 	k, w, s = ica.fastica(rgb, fun = "exp", n_comp = 3, w_init = wguess, maxit = 40000, tol = 1e-14)
 	print w
