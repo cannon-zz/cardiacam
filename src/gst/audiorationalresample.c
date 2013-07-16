@@ -44,7 +44,17 @@
  */
 
 
-GST_BOILERPLATE(GstAudioRationalResample, gst_audio_rationalresample, GstBin, GST_TYPE_BIN);
+#define GST_CAT_DEFAULT gst_audio_rationalresample_debug
+GST_DEBUG_CATEGORY_STATIC(GST_CAT_DEFAULT);
+
+
+static void additional_initializations(GType type)
+{
+	GST_DEBUG_CATEGORY_INIT(GST_CAT_DEFAULT, "audiorationalresample", 0, "audiorationalresample element");
+}
+
+
+GST_BOILERPLATE_FULL(GstAudioRationalResample, gst_audio_rationalresample, GstBin, GST_TYPE_BIN, additional_initializations);
 
 
 /*
