@@ -45,7 +45,17 @@
  */
 
 
-GST_BOILERPLATE(GstAudioRateFaker, gst_audio_rate_faker, GstBaseTransform, GST_TYPE_BASE_TRANSFORM);
+#define GST_CAT_DEFAULT gst_audio_rate_faker_debug
+GST_DEBUG_CATEGORY_STATIC(GST_CAT_DEFAULT);
+
+
+static void additional_initializations(GType type)
+{
+	GST_DEBUG_CATEGORY_INIT(GST_CAT_DEFAULT, "audioratefaker", 0, "audioratefaker element");
+}
+
+
+GST_BOILERPLATE_FULL(GstAudioRateFaker, gst_audio_rate_faker, GstBaseTransform, GST_TYPE_BASE_TRANSFORM, additional_initializations);
 
 
 /*
@@ -116,15 +126,8 @@ static gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outc
 		success &= gst_structure_get_fraction(s, "rate", &outrate_num, &outrate_den);
 
 	if(success) {
-		gint gcd;
-
-		element->inrate_over_outrate_num = inrate_num * outrate_den;
-		element->inrate_over_outrate_den = inrate_den * outrate_num;
-
-		gcd = gst_util_greatest_common_divisor(element->inrate_over_outrate_num, element->inrate_over_outrate_den);
-
-		element->inrate_over_outrate_num /= gcd;
-		element->inrate_over_outrate_den /= gcd;
+		gst_util_fraction_multiply(inrate_num, inrate_den, outrate_den, outrate_num, &element->inrate_over_outrate_num, &element->inrate_over_outrate_den);
+		GST_DEBUG_OBJECT(element, "in rate / out rate = %d/%d", element->inrate_over_outrate_num, element->inrate_over_outrate_den);
 	}
 
 	return success;
@@ -140,6 +143,7 @@ static gboolean event(GstBaseTransform *trans, GstEvent *event)
 		if(element->last_segment)
 			gst_event_unref(element->last_segment);
 		element->last_segment = event;
+		gst_event_ref(event);	/* FIXME:  is this needed? */
 		return FALSE;
 
 	default:
