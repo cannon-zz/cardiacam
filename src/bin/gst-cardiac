@@ -11,6 +11,7 @@
 
 
 from optparse import OptionParser
+import os
 import sys
 
 
@@ -21,6 +22,9 @@ gobject.threads_init()
 import pygst
 pygst.require("0.10")
 import gst
+
+
+from cardiacam import videotypes
 
 
 __author__ = "Kipp Cannon <kcannon@cita.utoronto.ca>"
@@ -52,11 +56,36 @@ def mkelem(pipeline, src, elem_type_name, **properties):
 	return elem
 
 
-def deferred_link(src, srcpadname, sinkpad):
-	def pad_added(element, pad, (srcpadname, sinkpad)):
+def write_dump_dot(pipeline, filestem, verbose = False):
+	"""
+	This function needs the environment variable GST_DEBUG_DUMP_DOT_DIR
+	to be set.   The filename will be
+
+	os.path.join($GST_DEBUG_DUMP_DOT_DIR, filestem + ".dot")
+
+	If verbose is True, a message will be written to stderr.
+	"""
+	if "GST_DEBUG_DUMP_DOT_DIR" not in os.environ:
+		raise ValueError("cannot write pipeline, environment variable GST_DEBUG_DUMP_DOT_DIR is not set")
+	gst.DEBUG_BIN_TO_DOT_FILE(pipeline, gst.DEBUG_GRAPH_SHOW_ALL, filestem)
+	if verbose:
+		print >>sys.stderr, "Wrote pipeline to %s" % os.path.join(os.environ["GST_DEBUG_DUMP_DOT_DIR"], "%s.dot" % filestem)
+
+
+class src_deferred_link(object):
+	def __init__(self, src, srcpadname, sinkpad):
+		no_more_pads_handler_id = src.connect("no-more-pads", self.no_more_pads, srcpadname)
+		src.connect("pad-added", self.pad_added, (srcpadname, sinkpad, no_more_pads_handler_id))
+
+	@staticmethod
+	def pad_added(element, pad, (srcpadname, sinkpad, no_more_pads_handler_id)):
 		if pad.get_name() == srcpadname:
+			pad.get_parent().handler_disconnect(no_more_pads_handler_id)
 			pad.link(sinkpad)
-	src.connect("pad-added", pad_added, (srcpadname, sinkpad))
+
+	@staticmethod
+	def no_more_pads(element, srcpadname):
+		raise ValueError("<%s>: no pad named '%s'" % (element.get_name(), srcpadname))
 
 
 #
@@ -173,7 +202,7 @@ class face_processor(gst.Bin):
 		else:
 			raise AssertionError
 
-	def new_video_caps(self, pad, pspec):
+	def new_video_caps(self, pad, pspec, ignored):
 		s = pad.get_property("caps")[0]
 		self.video_width = s["width"]
 		self.video_height = s["height"]
@@ -201,16 +230,30 @@ class face_processor(gst.Bin):
 		# crop video stream
 		#
 
-		self.crop = mkelem(self, None, "videocrop")
+		self.crop = head = mkelem(self, None, "videocrop")
 		pad = self.crop.get_pad("sink")
-		pad.connect("notify::caps", self.new_video_caps)
+		pad.connect("notify::caps", self.new_video_caps, None)
 		self.add_pad(gst.GhostPad("sink", pad))
 
 		#
-		# display
+		# display cropped stream
 		#
 
-		mkelem(self, mkelem(self, self.crop, "ffmpegcolorspace"), "autovideosink")
+		#head = mkelem(self, head, "tee")
+		#mkelem(self, mkelem(self, mkelem(self, head, "queue"), "ffmpegcolorspace"), "autovideosink")
+
+		#
+		# convert to RGB time series at 64 Hz
+		#
+
+		head = mkelem(self, head, "video2rgb", gamma = 2.4)
+		head = mkelem(self, mkelem(self, head, "audiorationalresample"), "capsfilter", caps = gst.Caps("audio/x-raw-float, rate=48"))
+
+		#
+		# dump to text file
+		#
+
+		mkelem(self, mkelem(self, mkelem(self, head, "queue"), "lal_nxydump"), "fdsink", fd = 1, sync = False, async = False)
 
 
 gobject.type_register(face_processor)
@@ -292,14 +335,15 @@ class Handler(object):
 		#
 
 		if len(faces) > len(self.face_processors):
-			self.pipeline.set_state(gst.STATE_READY)
+			self.pipeline.set_state(gst.STATE_PAUSED)
 			while len(faces) > len(self.face_processors) and self.src is not None:
 				queue = mkelem(self.pipeline, None, "queue")
+				queue.set_state(gst.STATE_PAUSED)
 				self.face_processors.append(mkelem(self.pipeline, queue, "face_processor"))
-				queue.set_state(gst.STATE_READY)
-				self.face_processors[-1].set_state(gst.STATE_READY)
+				self.face_processors[-1].set_state(gst.STATE_PAUSED)
 				self.src.link(queue)
 			self.pipeline.set_state(gst.STATE_PLAYING)
+			#write_dump_dot(self.pipeline, "blah", verbose = True)
 
 		#
 		# do we need to remove any?
@@ -330,18 +374,18 @@ handler = Handler(mainloop, pipeline)
 
 
 if options.input.startswith("/dev/"):
-	src = mkelem(pipeline, None, "v4l2src", device = options.input)
-	src = mkelem(pipeline, src, "ffmpegcolorspace")
+	src = mkelem(pipeline, mkelem(pipeline, None, "v4l2src", device = options.input), "ffmpegcolorspace")
 else:
-	src = mkelem(pipeline, mkelem(pipeline, None, "filesrc", location = options.input), "decodebin")
+	src = mkelem(pipeline, mkelem(pipeline, None, "filesrc", location = options.input), "decodebin2")
 	elem = mkelem(pipeline, None, "ffmpegcolorspace")
-	deferred_link(src, "src0", elem.get_pad("sink"))
+	src_deferred_link(src, "src0", elem.get_pad("sink"))
 	src = elem
-handler.src = src = mkelem(pipeline, src, "tee")
 
-head = mkelem(pipeline, src, "queue", max_size_buffers = 1, max_size_time = 0, max_size_bytes = 0, leaky = 1)
-head = mkelem(pipeline, head, "facedetect")
-mkelem(pipeline, mkelem(pipeline, head, "ffmpegcolorspace"), "autovideosink")
+handler.src = src = mkelem(pipeline, mkelem(pipeline, src, "capsfilter", caps = gst.Caps(videotypes.video_caps)), "tee")
+
+src = mkelem(pipeline, src, "facedetect", scale_factor = 1.1, min_size_width = 75, min_size_height = 75)
+src = mkelem(pipeline, src, "queue", max_size_buffers = 0, max_size_time = 0, max_size_bytes = 0)
+mkelem(pipeline, mkelem(pipeline, src, "ffmpegcolorspace"), "autovideosink")
 
 pipeline.set_state(gst.STATE_PLAYING)
 mainloop.run()
