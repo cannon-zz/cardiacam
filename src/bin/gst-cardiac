@@ -162,6 +162,36 @@ class face_processor(gst.Bin):
 		)
 	}
 
+	def _update_crop_box(self):
+		if -1 in (self.face_width, self.face_height, self.video_width, self.video_height):
+			#
+			# we're not properly initialized.  clear the crop
+			# box
+			#
+
+			self.crop.set_property("left", 0)
+			self.crop.set_property("top", 0)
+			self.crop.set_property("right", 0)
+			self.crop.set_property("bottom", 0)
+		else:
+			#
+			# safety checks
+			#
+
+			assert 0 <= self.face_x < self.video_width
+			assert 0 <= self.face_y < self.video_height
+			assert self.face_x + self.face_width <= self.video_width
+			assert self.face_y + self.face_height <= self.video_height
+
+			#
+			# update crop box
+			#
+
+			self.crop.set_property("left", self.face_x)
+			self.crop.set_property("top", self.face_y)
+			self.crop.set_property("right", self.video_width - (self.face_x + self.face_width))
+			self.crop.set_property("bottom", self.video_height - (self.face_y + self.face_height))
+
 	def do_set_property(self, prop, val):
 		if prop.name == "face-x":
 			self.face_x = val
@@ -173,22 +203,7 @@ class face_processor(gst.Bin):
 			self.face_height = val
 		else:
 			raise AssertionError
-
-		#
-		# adjust video crop box.  if the face's width or height is
-		# 0, interpret that to mean "no crop box".
-		#
-
-		if 0 in (self.face_width, self.face_height, self.video_width, self.video_height):
-			self.crop.set_property("left", 0)
-			self.crop.set_property("top", 0)
-			self.crop.set_property("right", 0)
-			self.crop.set_property("bottom", 0)
-		else:
-			self.crop.set_property("left", self.face_x)
-			self.crop.set_property("top", self.face_y)
-			self.crop.set_property("right", self.video_width - (self.face_x + self.face_width))
-			self.crop.set_property("bottom", self.video_height - (self.face_y + self.face_height))
+		self._update_crop_box()
 
 	def do_get_property(self, prop):
 		if prop.name == "face-x":
@@ -203,18 +218,20 @@ class face_processor(gst.Bin):
 			raise AssertionError
 
 	def new_video_caps(self, pad, pspec, ignored):
-		s = pad.get_property("caps")[0]
-		self.video_width = s["width"]
-		self.video_height = s["height"]
+		caps = pad.get_property("caps")
+		if caps is None:
+			self.video_width = self.video_height = -1
+		else:
+			s = caps[0]
+			self.video_width = s["width"]
+			self.video_height = s["height"]
 
-		#
-		# reset face bounding box
-		#
+			#
+			# reset face bounding box
+			#
 
-		self.set_property("face-x", 0)
-		self.set_property("face-y", 0)
-		self.set_property("face-width", 0)
-		self.set_property("face-height", 0)
+			self.face_x = self.face_y = self.face_width = self.face_height = -1
+			self._update_crop_box()
 
 	def __init__(self):
 		#
@@ -222,9 +239,9 @@ class face_processor(gst.Bin):
 		#
 
 		super(face_processor, self).__init__()
-		self.video_width, self.video_height = 0, 0
-		self.face_x, self.face_y = 0, 0
-		self.face_width, self.face_height = 0, 0
+		self.video_width, self.video_height = -1, -1
+		self.face_x, self.face_y = -1, -1
+		self.face_width, self.face_height = -1, -1
 
 		#
 		# crop video stream
@@ -383,7 +400,16 @@ else:
 
 handler.src = src = mkelem(pipeline, mkelem(pipeline, src, "capsfilter", caps = gst.Caps(videotypes.video_caps)), "tee")
 
-src = mkelem(pipeline, src, "facedetect", scale_factor = 1.1, min_size_width = 75, min_size_height = 75)
+def facedetect_sink_caps_hander(pad, pspec, ignored):
+	caps = pad.get_property("caps")
+	if caps is not None:
+		elem = pad.get_parent()
+		s = caps[0]
+		elem.set_property("min-size-width", s["width"] // 6)
+		elem.set_property("min-size-height", s["height"] // 4)
+src = mkelem(pipeline, src, "facedetect", scale_factor = 1.1)
+src.get_pad("sink").connect("notify::caps", facedetect_sink_caps_hander, None)
+
 src = mkelem(pipeline, src, "queue", max_size_buffers = 0, max_size_time = 0, max_size_bytes = 0)
 mkelem(pipeline, mkelem(pipeline, src, "ffmpegcolorspace"), "autovideosink")
 
