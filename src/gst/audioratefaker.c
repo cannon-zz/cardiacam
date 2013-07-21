@@ -210,6 +210,12 @@ static void finalize(GObject *object)
 	if(element->last_segment)
 		gst_event_unref(element->last_segment);
 	element->last_segment = NULL;
+
+	/*
+	 * chain to parent class' finalize() method
+	 */
+
+	G_OBJECT_CLASS(parent_class)->finalize(object);
 }
 
 
