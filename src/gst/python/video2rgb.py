@@ -83,10 +83,6 @@ class video2rgb(gst.BaseTransform):
 	)
 
 
-	def __init__(self):
-		super(video2rgb, self).__init__()
-
-
 	def do_set_property(self, prop, val):
 		if prop.name == "gamma":
 			self.gamma = val
@@ -122,10 +118,7 @@ class video2rgb(gst.BaseTransform):
 
 	def do_transform(self, inbuf, outbuf):
 		#
-		# wrap input and output buffers in numpy arrays.  assigning
-		# to .shape ensures the reshape is done as a zero-copy
-		# transform.  if the .reshape() method is used it always
-		# works but doesn't always do a zero-copy transform.
+		# wrap input and output buffers in numpy arrays.
 		#
 
 		indata = numpy.ma.MaskedArray(data = numpy.ndarray(buffer = inbuf, shape = (self.height, self.width), strides = (self.stride, 3), dtype = video_dtype), mask = self.mask)
