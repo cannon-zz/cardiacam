@@ -42,7 +42,7 @@
 #include <audiorationalresample.h>
 #include <audioratefaker.h>
 #include <videoratefaker.h>
-#include <video2rgb.h>
+#include <face2rgb.h>
 
 
 /*
@@ -63,7 +63,7 @@ static gboolean plugin_init(GstPlugin *plugin)
 		{"audiorationalresample", GST_TYPE_AUDIO_RATIONALRESAMPLE},
 		{"audioratefaker", GST_TYPE_AUDIO_RATE_FAKER},
 		{"videoratefaker", GST_TYPE_VIDEO_RATE_FAKER},
-		{"video2rgb", GST_TYPE_VIDEO_2_RGB},
+		{"face2rgb", GST_TYPE_FACE_2_RGB},
 		{NULL, 0},
 	};
 

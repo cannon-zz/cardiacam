@@ -264,7 +264,7 @@ class face_processor(gst.Bin):
 		# convert to RGB time series at 64 Hz
 		#
 
-		head = mkelem(self, head, "video2rgb", gamma = 2.4)
+		head = mkelem(self, head, "face2rgb", gamma = 2.4)
 		head = mkelem(self, mkelem(self, head, "audiorationalresample"), "capsfilter", caps = gst.Caps("audio/x-raw-float, rate=48"))
 
 		#

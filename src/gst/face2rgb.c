@@ -1,5 +1,5 @@
 /*
- * GstVideo2RGB
+ * GstFace2RGB
  *
  * Copyright (C) 2013  Kipp Cannon
  *
@@ -36,7 +36,7 @@
 #include <gst/base/gstbasetransform.h>
 
 
-#include <video2rgb.h>
+#include <face2rgb.h>
 
 
 #define DEFAULT_GAMMA 1.0
@@ -51,17 +51,17 @@
  */
 
 
-#define GST_CAT_DEFAULT gst_video_2_rgb_debug
+#define GST_CAT_DEFAULT gst_face_2_rgb_debug
 GST_DEBUG_CATEGORY_STATIC(GST_CAT_DEFAULT);
 
 
 static void additional_initializations(GType type)
 {
-	GST_DEBUG_CATEGORY_INIT(GST_CAT_DEFAULT, "video2rgb", 0, "video2rgb element");
+	GST_DEBUG_CATEGORY_INIT(GST_CAT_DEFAULT, "face2rgb", 0, "face2rgb element");
 }
 
 
-GST_BOILERPLATE_FULL(GstVideo2RGB, gst_video_2_rgb, GstBaseTransform, GST_TYPE_BASE_TRANSFORM, additional_initializations);
+GST_BOILERPLATE_FULL(GstFace2RGB, gst_face_2_rgb, GstBaseTransform, GST_TYPE_BASE_TRANSFORM, additional_initializations);
 
 
 /*
@@ -146,7 +146,7 @@ static GstCaps *transform_caps(GstBaseTransform *trans, GstPadDirection directio
 
 static gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outcaps)
 {
-	GstVideo2RGB *element = GST_VIDEO_2_RGB(trans);
+	GstFace2RGB *element = GST_FACE_2_RGB(trans);
 	GstStructure *str = gst_caps_get_structure(incaps, 0);
 	gint width, height, bpp;
 	gboolean success = TRUE;
@@ -186,7 +186,7 @@ static gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outc
 
 static gboolean start(GstBaseTransform *trans)
 {
-	GstVideo2RGB *element = GST_VIDEO_2_RGB(trans);
+	GstFace2RGB *element = GST_FACE_2_RGB(trans);
 
 	element->offset = 0;
 
@@ -196,7 +196,7 @@ static gboolean start(GstBaseTransform *trans)
 
 static GstFlowReturn transform(GstBaseTransform *trans, GstBuffer *inbuf, GstBuffer *outbuf)
 {
-	GstVideo2RGB *element = GST_VIDEO_2_RGB(trans);
+	GstFace2RGB *element = GST_FACE_2_RGB(trans);
 	gdouble *out = (gdouble *) GST_BUFFER_DATA(outbuf);
 	guchar *row = GST_BUFFER_DATA(inbuf);
 	guchar *last_row = row + element->height * element->stride;
@@ -248,7 +248,7 @@ enum property {
 
 static void set_property(GObject *object, enum property prop_id, const GValue *value, GParamSpec *pspec)
 {
-	GstVideo2RGB *element = GST_VIDEO_2_RGB(object);
+	GstFace2RGB *element = GST_FACE_2_RGB(object);
 
 	GST_OBJECT_LOCK(element);
 
@@ -268,7 +268,7 @@ static void set_property(GObject *object, enum property prop_id, const GValue *v
 
 static void get_property(GObject *object, enum property prop_id, GValue *value, GParamSpec *pspec)
 {
-	GstVideo2RGB *element = GST_VIDEO_2_RGB(object);
+	GstFace2RGB *element = GST_FACE_2_RGB(object);
 
 	GST_OBJECT_LOCK(element);
 
@@ -288,7 +288,7 @@ static void get_property(GObject *object, enum property prop_id, GValue *value, 
 
 static void finalize(GObject *object)
 {
-	GstVideo2RGB *element = GST_VIDEO_2_RGB(object);
+	GstFace2RGB *element = GST_FACE_2_RGB(object);
 
 	g_free(element->mask);
 	element->mask = NULL;
@@ -301,7 +301,7 @@ static void finalize(GObject *object)
 }
 
 
-static void gst_video_2_rgb_base_init(gpointer klass)
+static void gst_face_2_rgb_base_init(gpointer klass)
 {
 	/* no-op */
 }
@@ -340,7 +340,7 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE(
 );
 
 
-static void gst_video_2_rgb_class_init(GstVideo2RGBClass *klass)
+static void gst_face_2_rgb_class_init(GstFace2RGBClass *klass)
 {
 	GObjectClass *gobject_class = G_OBJECT_CLASS(klass);
 	GstElementClass *element_class = GST_ELEMENT_CLASS(klass);
@@ -357,7 +357,7 @@ static void gst_video_2_rgb_class_init(GstVideo2RGBClass *klass)
 	transform_class->transform = GST_DEBUG_FUNCPTR(transform);
 
 	gst_element_class_set_details_simple(element_class, 
-		"Video to RGB time series",
+		"Face to RGB time series",
 		"Filter/Video",
 		"Convert a video stream to red, green, blue time series",
 		"Kipp Cannon <kipp.cannon@ligo.org>"
@@ -380,7 +380,7 @@ static void gst_video_2_rgb_class_init(GstVideo2RGBClass *klass)
 }
 
 
-static void gst_video_2_rgb_init(GstVideo2RGB *element, GstVideo2RGBClass *klass)
+static void gst_face_2_rgb_init(GstFace2RGB *element, GstFace2RGBClass *klass)
 {
 	gst_base_transform_set_gap_aware(GST_BASE_TRANSFORM(element), TRUE);
 

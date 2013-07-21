@@ -1,5 +1,5 @@
 /*
- * GstVideo2RGB
+ * GstFace2RGB
  *
  * Copyright (C) 2013  Kipp Cannon
  *
@@ -19,8 +19,8 @@
  */
 
 
-#ifndef __VIDEO_2_RGB_H__
-#define __VIDEO_2_RGB_H__
+#ifndef __FACE_2_RGB_H__
+#define __FACE_2_RGB_H__
 
 
 /*
@@ -49,25 +49,25 @@ G_BEGIN_DECLS
  */
 
 
-#define GST_TYPE_VIDEO_2_RGB \
-	(gst_video_2_rgb_get_type())
-#define GST_VIDEO_2_RGB(obj) \
-	(G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_VIDEO_2_RGB, GstVideo2RGB))
-#define GST_VIDEO_2_RGB_CLASS(klass) \
-	(G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_VIDEO_2_RGB, GstVideo2RGBClass))
-#define GST_VIDEO_2_RGB_GET_CLASS(obj) \
-	(G_TYPE_INSTANCE_GET_CLASS((obj), GST_TYPE_VIDEO_2_RGB, GstVideo2RGBClass))
-#define GST_IS_VIDEO_2_RGB(obj) \
-	(G_TYPE_CHECK_INSTANCE_TYPE((obj), GST_TYPE_VIDEO_2_RGB))
-#define GST_IS_VIDEO_2_RGB_CLASS(klass) \
-	(G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_VIDEO_2_RGB))
+#define GST_TYPE_FACE_2_RGB \
+	(gst_face_2_rgb_get_type())
+#define GST_FACE_2_RGB(obj) \
+	(G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_FACE_2_RGB, GstFace2RGB))
+#define GST_FACE_2_RGB_CLASS(klass) \
+	(G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_FACE_2_RGB, GstFace2RGBClass))
+#define GST_FACE_2_RGB_GET_CLASS(obj) \
+	(G_TYPE_INSTANCE_GET_CLASS((obj), GST_TYPE_FACE_2_RGB, GstFace2RGBClass))
+#define GST_IS_FACE_2_RGB(obj) \
+	(G_TYPE_CHECK_INSTANCE_TYPE((obj), GST_TYPE_FACE_2_RGB))
+#define GST_IS_FACE_2_RGB_CLASS(klass) \
+	(G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_FACE_2_RGB))
 
 
-typedef struct _GstVideo2RGBClass GstVideo2RGBClass;
-typedef struct _GstVideo2RGB GstVideo2RGB;
+typedef struct _GstFace2RGBClass GstFace2RGBClass;
+typedef struct _GstFace2RGB GstFace2RGB;
 
 
-struct _GstVideo2RGBClass {
+struct _GstFace2RGBClass {
 	GstBaseTransformClass parent_class;
 };
 
@@ -77,7 +77,7 @@ struct _GstVideo2RGBClass {
  */
 
 
-struct _GstVideo2RGB {
+struct _GstFace2RGB {
 	GstBaseTransform basetransform;
 
 	gdouble gamma;
@@ -99,10 +99,10 @@ struct _GstVideo2RGB {
  */
 
 
-GType gst_video_2_rgb_get_type(void);
+GType gst_face_2_rgb_get_type(void);
 
 
 G_END_DECLS
 
 
-#endif	/* __VIDEO_2_RGB_H__ */
+#endif	/* __FACE_2_RGB_H__ */
