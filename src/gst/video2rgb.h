@@ -1,0 +1,108 @@
+/*
+ * GstVideo2RGB
+ *
+ * Copyright (C) 2013  Kipp Cannon
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+
+#ifndef __VIDEO_2_RGB_H__
+#define __VIDEO_2_RGB_H__
+
+
+/*
+ * ============================================================================
+ *
+ *                                  Preamble
+ *
+ * ============================================================================
+ */
+
+
+#include <glib.h>
+#include <gst/gst.h>
+#include <gst/base/gstbasetransform.h>
+
+
+G_BEGIN_DECLS
+
+
+/*
+ * ============================================================================
+ *
+ *                                    Type
+ *
+ * ============================================================================
+ */
+
+
+#define GST_TYPE_VIDEO_2_RGB \
+	(gst_video_2_rgb_get_type())
+#define GST_VIDEO_2_RGB(obj) \
+	(G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_VIDEO_2_RGB, GstVideo2RGB))
+#define GST_VIDEO_2_RGB_CLASS(klass) \
+	(G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_VIDEO_2_RGB, GstVideo2RGBClass))
+#define GST_VIDEO_2_RGB_GET_CLASS(obj) \
+	(G_TYPE_INSTANCE_GET_CLASS((obj), GST_TYPE_VIDEO_2_RGB, GstVideo2RGBClass))
+#define GST_IS_VIDEO_2_RGB(obj) \
+	(G_TYPE_CHECK_INSTANCE_TYPE((obj), GST_TYPE_VIDEO_2_RGB))
+#define GST_IS_VIDEO_2_RGB_CLASS(klass) \
+	(G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_VIDEO_2_RGB))
+
+
+typedef struct _GstVideo2RGBClass GstVideo2RGBClass;
+typedef struct _GstVideo2RGB GstVideo2RGB;
+
+
+struct _GstVideo2RGBClass {
+	GstBaseTransformClass parent_class;
+};
+
+
+/**
+ * GstVideoRationalResample
+ */
+
+
+struct _GstVideo2RGB {
+	GstBaseTransform basetransform;
+
+	gdouble gamma;
+	gint width, height;	/* pixels */
+	gint stride;	/* bytes */
+	gint *mask;
+	gdouble N;
+
+	guint64 offset;
+};
+
+
+/*
+ * ============================================================================
+ *
+ *                                Exported API
+ *
+ * ============================================================================
+ */
+
+
+GType gst_video_2_rgb_get_type(void);
+
+
+G_END_DECLS
+
+
+#endif	/* __VIDEO_2_RGB_H__ */
