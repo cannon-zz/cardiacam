@@ -40,6 +40,10 @@
 
 
 #define DEFAULT_GAMMA 1.0
+#define DEFAULT_FACE_X 0
+#define DEFAULT_FACE_Y 0
+#define DEFAULT_FACE_WIDTH 0
+#define DEFAULT_FACE_HEIGHT 0
 
 
 /*
@@ -62,6 +66,48 @@ static void additional_initializations(GType type)
 
 
 GST_BOILERPLATE_FULL(GstFace2RGB, gst_face_2_rgb, GstBaseTransform, GST_TYPE_BASE_TRANSFORM, additional_initializations);
+
+
+/*
+ * ============================================================================
+ *
+ *                             Internal Functions
+ *
+ * ============================================================================
+ */
+
+
+static void make_mask(GstFace2RGB *element)
+{
+	gint *mask = element->mask = g_realloc_n(element->mask, element->height * element->width, sizeof(*element->mask));
+	gint x, y;
+	gint count_in = 0, count_out = 0;
+	gint face_width = element->face_width > 0 ? element->face_width : element->width;
+	gint face_height = element->face_height > 0 ? element->face_height : element->height;
+
+	/*
+	 * set mask to 1 outside of face ellipse
+	 */
+
+	for(y = 0; y < element->height; y++) {
+		gdouble y_squared = pow(2.0 * (y - element->face_y) / (face_height - 1) - 1, 2);
+		for(x = 0; x < element->width; x++, mask++) {
+			if(pow(2.0 * (x - element->face_x) / (face_width - 1) - 1, 2) + y_squared > 1) {
+				*mask = 1;
+				count_out++;
+			} else {
+				*mask = 0;
+				count_in++;
+			}
+		}
+	}
+
+	/*
+	 * non-face pixel count to face pixel count ratio
+	 */
+
+	element->out_over_in = (double) count_out / count_in;
+}
 
 
 /*
@@ -155,8 +201,6 @@ static gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outc
 	success &= gst_structure_get_int(str, "height", &height);
 	success &= gst_structure_get_int(str, "bpp", &bpp);
 	if(success) {
-		gint *mask;
-		gint x, y;
 		gint stride = bpp / 8 * width;
 		/* round up to multiple of 4 */
 		if(stride & 0x3)
@@ -166,17 +210,7 @@ static gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outc
 		element->height = height;
 		element->stride = stride;
 
-		/*
-		 * set mask to 1 outside of ellipse
-		 */
-
-		element->mask = mask = g_realloc_n(element->mask, height * width, sizeof(*element->mask));
-		element->N = 0.0;
-		for(y = 0; y < height; y++)
-			for(x = 0; x < width; x++, mask++) {
-				*mask = pow(2.0 * x / (width - 1) - 1, 2) + pow(2.0 * y / (height - 1) - 1, 2) > 1 ? 1 : 0;
-				element->N += *mask ? 0.0 : 1.0;
-			}
+		element->need_new_mask = TRUE;
 	} else
 		GST_ERROR_OBJECT(element, "could not parse caps");
 
@@ -200,33 +234,75 @@ static GstFlowReturn transform(GstBaseTransform *trans, GstBuffer *inbuf, GstBuf
 	gdouble *out = (gdouble *) GST_BUFFER_DATA(outbuf);
 	guchar *row = GST_BUFFER_DATA(inbuf);
 	guchar *last_row = row + element->height * element->stride;
-	gint *mask = element->mask;
-	gdouble out_r = 0.0;
-	gdouble out_g = 0.0;
-	gdouble out_b = 0.0;
+	gint *mask;
+	gdouble face_r = 0.0, bg_r = 0.0;
+	gdouble face_g = 0.0, bg_g = 0.0;
+	gdouble face_b = 0.0, bg_b = 0.0;
+	gdouble face_y, bg_y;
 
+	if(element->need_new_mask) {
+		make_mask(element);
+		element->need_new_mask = FALSE;
+	}
+	mask = element->mask;
 	g_return_val_if_fail(mask != NULL, GST_FLOW_ERROR);
+
+	/*
+	 * apply gamma correction, and sum face and background RGB
+	 * components
+	 */
 
 	for(; row < last_row; row += element->stride) {
 		guchar *in = row;
 		gint col;
 		for(col = 0; col < element->width; col++) {
+			gdouble r = pow(*in++ / 255.0, element->gamma);
+			gdouble g = pow(*in++ / 255.0, element->gamma);
+			gdouble b = pow(*in++ / 255.0, element->gamma);
 			if(!*mask++) {
-				out_r += pow(*in++ / 255.0, element->gamma);
-				out_g += pow(*in++ / 255.0, element->gamma);
-				out_b += pow(*in++ / 255.0, element->gamma);
-			} else
-				in += 3;
+				face_r += r;
+				face_g += g;
+				face_b += b;
+			} else {
+#if 1
+				bg_r += r;
+				bg_g += g;
+				bg_b += b;
+#else
+				bg_r++;
+				bg_g++;
+				bg_b++;
+#endif
+			}
 		}
 	}
 
-	out[0] = out_r / element->N;
-	out[1] = out_g / element->N;
-	out[2] = out_b / element->N;
+	/*
+	 * compute face and background brightness
+	 */
+
+	face_y = (0.2126 * face_r + 0.7152 * face_g + 0.0722 * face_b);
+	bg_y = (0.2126 * bg_r + 0.7152 * bg_g + 0.0722 * bg_b);
+
+	/*
+	 * set output sample values
+	 */
+
+	out[0] = face_r * element->out_over_in / bg_y;
+	out[1] = face_g * element->out_over_in / bg_y;
+	out[2] = face_b * element->out_over_in / bg_y;
+
+	/*
+	 * fix offset on output buffers
+	 */
 
 	GST_BUFFER_OFFSET(outbuf) = element->offset;
 	element->offset++;
 	GST_BUFFER_OFFSET_END(outbuf) = element->offset;
+
+	/*
+	 * done
+	 */
 
 	return GST_FLOW_OK;
 }
@@ -242,7 +318,11 @@ static GstFlowReturn transform(GstBaseTransform *trans, GstBuffer *inbuf, GstBuf
 
 
 enum property {
-	ARG_GAMMA = 1
+	ARG_GAMMA = 1,
+	ARG_FACE_X,
+	ARG_FACE_Y,
+	ARG_FACE_WIDTH,
+	ARG_FACE_HEIGHT
 };
 
 
@@ -255,6 +335,26 @@ static void set_property(GObject *object, enum property prop_id, const GValue *v
 	switch(prop_id) {
 	case ARG_GAMMA:
 		element->gamma = g_value_get_double(value);
+		break;
+
+	case ARG_FACE_X:
+		element->face_x = g_value_get_int(value);
+		element->need_new_mask = TRUE;
+		break;
+
+	case ARG_FACE_Y:
+		element->face_y = g_value_get_int(value);
+		element->need_new_mask = TRUE;
+		break;
+
+	case ARG_FACE_WIDTH:
+		element->face_width = g_value_get_int(value);
+		element->need_new_mask = TRUE;
+		break;
+
+	case ARG_FACE_HEIGHT:
+		element->face_height = g_value_get_int(value);
+		element->need_new_mask = TRUE;
 		break;
 
 	default:
@@ -275,6 +375,22 @@ static void get_property(GObject *object, enum property prop_id, GValue *value, 
 	switch(prop_id) {
 	case ARG_GAMMA:
 		g_value_set_double(value, element->gamma);
+		break;
+
+	case ARG_FACE_X:
+		g_value_set_int(value, element->face_x);
+		break;
+
+	case ARG_FACE_Y:
+		g_value_set_int(value, element->face_y);
+		break;
+
+	case ARG_FACE_WIDTH:
+		g_value_set_int(value, element->face_width);
+		break;
+
+	case ARG_FACE_HEIGHT:
+		g_value_set_int(value, element->face_height);
 		break;
 
 	default:
@@ -375,6 +491,54 @@ static void gst_face_2_rgb_class_init(GstFace2RGBClass *klass)
 		)
 	);
 
+	g_object_class_install_property(
+		gobject_class,
+		ARG_FACE_X,
+		g_param_spec_int(
+			"face-x",
+			"face X",
+			"Left edge of face.",
+			G_MININT, G_MAXINT, DEFAULT_FACE_X,
+			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
+		)
+	);
+
+	g_object_class_install_property(
+		gobject_class,
+		ARG_FACE_Y,
+		g_param_spec_int(
+			"face-y",
+			"face y",
+			"Top edge of face.",
+			G_MININT, G_MAXINT, DEFAULT_FACE_Y,
+			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
+		)
+	);
+
+	g_object_class_install_property(
+		gobject_class,
+		ARG_FACE_WIDTH,
+		g_param_spec_int(
+			"face-width",
+			"face width",
+			"Width of face (0 = use width of video).",
+			G_MININT, G_MAXINT, DEFAULT_FACE_WIDTH,
+			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
+		)
+	);
+
+	g_object_class_install_property(
+		gobject_class,
+		ARG_FACE_HEIGHT,
+		g_param_spec_int(
+			"face-height",
+			"face height",
+			"Height of face (0 = use height of video).",
+			G_MININT, G_MAXINT, DEFAULT_FACE_HEIGHT,
+			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
+		)
+	);
+
 	gst_element_class_add_pad_template(element_class, gst_static_pad_template_get(&src_factory));
 	gst_element_class_add_pad_template(element_class, gst_static_pad_template_get(&sink_factory));
 }
@@ -385,4 +549,5 @@ static void gst_face_2_rgb_init(GstFace2RGB *element, GstFace2RGBClass *klass)
 	gst_base_transform_set_gap_aware(GST_BASE_TRANSFORM(element), TRUE);
 
 	element->mask = NULL;
+	element->need_new_mask = TRUE;
 }

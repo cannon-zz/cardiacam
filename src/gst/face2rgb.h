@@ -81,10 +81,14 @@ struct _GstFace2RGB {
 	GstBaseTransform basetransform;
 
 	gdouble gamma;
+	gint face_x, face_y;	/* pixels */
+	gint face_width, face_height;	/* pixels */
+	gboolean need_new_mask;
+
 	gint width, height;	/* pixels */
 	gint stride;	/* bytes */
 	gint *mask;
-	gdouble N;
+	gdouble out_over_in;
 
 	guint64 offset;
 };
