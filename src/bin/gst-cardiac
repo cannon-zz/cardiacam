@@ -201,6 +201,7 @@ class face_processor(gst.Bin):
 		#
 
 		head = mkelem(self, head, "audiochebband", lower_frequency = .5, upper_frequency = 5., poles = 4)
+		#head = mkelem(self, head, "audiowsincband", mode = 0, lower_frequency = .5, upper_frequency = 5., window = 4, length = 101)
 
 		#
 		# dump to text file
