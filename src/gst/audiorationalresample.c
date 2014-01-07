@@ -1,7 +1,7 @@
 /*
  * GstAudioRationalResample
  *
- * Copyright (C) 2012.2013  Kipp Cannon
+ * Copyright (C) 2012,2013  Kipp Cannon
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -227,23 +227,23 @@ static void gst_audio_rationalresample_init(GstAudioRationalResample *resample, 
 
 	resample->sinkpad = gst_ghost_pad_new_no_target_from_template("sink", gst_element_class_get_pad_template(GST_ELEMENT_CLASS(klass), "sink"));
 	gst_pad_set_setcaps_function(resample->sinkpad, setcaps);
-	gst_object_ref(resample->sinkpad);
-	gst_element_add_pad(element, resample->sinkpad);
+	gst_object_ref(resample->sinkpad);	/* now two refs */
+	gst_element_add_pad(element, resample->sinkpad);	/* consume one ref */
 
 	resample->srcpad = gst_ghost_pad_new_no_target_from_template("src", gst_element_class_get_pad_template(GST_ELEMENT_CLASS(klass), "src"));
 	gst_pad_set_setcaps_function(resample->srcpad, setcaps);
-	gst_object_ref(resample->srcpad);
-	gst_element_add_pad(element, resample->srcpad);
+	gst_object_ref(resample->srcpad);	/* now two refs */
+	gst_element_add_pad(element, resample->srcpad);	/* consume one ref */
 
 	resample->precaps = gst_element_factory_make("capsfilter", "precaps"),
 	resample->postcaps = gst_element_factory_make("capsfilter", "postcaps"),
-	gst_object_ref(resample->precaps);
-	gst_object_ref(resample->postcaps);
+	gst_object_ref(resample->precaps);	/* now two refs */
+	gst_object_ref(resample->postcaps);	/* now two refs */
 	gst_bin_add_many(bin,
 		prefaker = gst_element_factory_make("audioratefaker", "prefaker"),
-		resample->precaps,
+		resample->precaps,	/* consume one ref */
 		audioresample = gst_element_factory_make("audioresample", "audioresample"),
-		resample->postcaps,
+		resample->postcaps,	/* consume one ref */
 		postfaker = gst_element_factory_make("audioratefaker", "postfaker"),
 		NULL
 	);
