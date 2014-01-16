@@ -13,6 +13,7 @@ autom4te.cache/
 config.log
 config.status
 configure
+gnuscripts/compile
 gnuscripts/config.guess
 gnuscripts/config.sub
 gnuscripts/depcomp
@@ -25,4 +26,5 @@ gnuscripts/ltversion.m4
 gnuscripts/lt~obsolete.m4
 gnuscripts/missing
 gnuscripts/py-compile
+gnuscripts/test-driver
 libtool
