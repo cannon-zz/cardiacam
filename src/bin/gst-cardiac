@@ -101,6 +101,7 @@ def parse_command_line():
 	parser.add_option("--input", metavar = "filename", default = "/dev/video0", help = "Set the name of the input file (default = \"/dev/video0\").  If the filename starts with \"/dev/\" then it is assumed to be a V4L device otherwise it is assumed to be a video file.")
 	parser.add_option("--brightness", metavar = "[-1, +1]", type = "float", help = "Adjust brightness for face detection (skin colour is computed from original video).")
 	parser.add_option("--contrast", metavar = "[0, 2]", type = "float", help = "Adjust contrast for face detection (skin colour is computed from original video).")
+	parser.add_option("--gamma", metavar = "gamma", type = "float", default = 1.6, help = "Set gamma correction (default = 1.6).")
 	parser.add_option("--no-display", action = "store_true", help = "Do not display video in window (allows code to run faster than realtime).")
 	parser.add_option("-v", "--verbose", action = "store_true", help = "Be verbose.")
 
@@ -128,9 +129,10 @@ class Handler(object):
 	facesparser = re.compile(r'.*faces=[^{]*\{ *(?:"([^"]*)")+ *\}.*')
 	faceparser = re.compile(r'(?P<name>[^ =]*)=\([^)]*\)(?P<value>[^ ,;]*)')
 
-	def __init__(self, mainloop, pipeline):
+	def __init__(self, mainloop, pipeline, gamma):
 		self.mainloop = mainloop
 		self.pipeline = pipeline
+		self.gamma = gamma
 
 		self.video_src = None
 		self.face_processors = []
@@ -201,6 +203,7 @@ class Handler(object):
 				queue = mkelem(self.pipeline, None, "queue", max_size_time = Gst.SECOND)
 				queue.set_state(Gst.State.PAUSED)
 				self.face_processors.append(mkelem(self.pipeline, queue, "faceprocessor"))
+				Gst.ChildProxy.set_property(self.face_processors[-1], "face2rgb::gamma", self.gamma)
 				self.face_processors[-1].set_state(Gst.State.PAUSED)
 				self.video_src.link(queue)
 			self.pipeline.set_state(Gst.State.PLAYING)
@@ -235,7 +238,7 @@ options, filenames = parse_command_line()
 
 pipeline = Gst.Pipeline()
 mainloop = GObject.MainLoop()
-handler = Handler(mainloop, pipeline)
+handler = Handler(mainloop, pipeline, options.gamma)
 
 #
 # get video stream
