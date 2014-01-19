@@ -1,7 +1,7 @@
 /*
  * GstAudioRationalResample
  *
- * Copyright (C) 2012,2013  Kipp Cannon
+ * Copyright (C) 2012--2014  Kipp Cannon
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@
 
 #include <glib.h>
 #include <gst/gst.h>
+#include <gst/audio/audio.h>
 
 
 #include <audiorationalresample.h>
@@ -48,13 +49,13 @@
 GST_DEBUG_CATEGORY_STATIC(GST_CAT_DEFAULT);
 
 
-static void additional_initializations(GType type)
+static void additional_initializations(void)
 {
 	GST_DEBUG_CATEGORY_INIT(GST_CAT_DEFAULT, "audiorationalresample", 0, "audiorationalresample element");
 }
 
 
-GST_BOILERPLATE_FULL(GstAudioRationalResample, gst_audio_rationalresample, GstBin, GST_TYPE_BIN, additional_initializations);
+G_DEFINE_TYPE_WITH_CODE(GstAudioRationalResample, gst_audio_rationalresample, GST_TYPE_BIN, additional_initializations(););
 
 
 /*
@@ -82,11 +83,12 @@ static gboolean setcaps(GstPad *pad, GstCaps *caps)
 
 	if(pad == element->sinkpad) {
 		incaps = caps;
-		outcaps = GST_PAD_CAPS(element->srcpad);
+		outcaps = gst_pad_get_current_caps(element->srcpad);
 	} else {
-		incaps = GST_PAD_CAPS(element->sinkpad);
+		incaps = gst_pad_get_current_caps(element->sinkpad);
 		outcaps = caps;
 	}
+	GST_DEBUG_OBJECT(element, "incaps = %" GST_PTR_FORMAT ", outcaps = %" GST_PTR_FORMAT, incaps, outcaps);
 
 	if(!incaps || !outcaps)
 		/* don't have complete caps yet, say they're OK */
@@ -116,9 +118,10 @@ static gboolean setcaps(GstPad *pad, GstCaps *caps)
 		GST_DEBUG_OBJECT(element, "input rate rescaled to %d, output rate rescaled to %d", inrate_num, outrate_num);
 
 		/* make rate fakers to do their thing */
-		g_object_set(element->precaps, "caps", gst_caps_new_simple("audio/x-raw-float", "rate", G_TYPE_INT, inrate_num, NULL), NULL);
-		g_object_set(element->postcaps, "caps", gst_caps_new_simple("audio/x-raw-float", "rate", G_TYPE_INT, outrate_num, NULL), NULL);
-	}
+		g_object_set(element->precaps, "caps", gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, inrate_num, NULL), NULL);
+		g_object_set(element->postcaps, "caps", gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, outrate_num, NULL), NULL);
+	} else
+		GST_ERROR_OBJECT(element, "could not determine input and output sample rates");
 
 done:
 	return success;
@@ -126,12 +129,24 @@ done:
 
 
 /*
- * ============================================================================
- *
- *                                Exported API
- *
- * ============================================================================
+ * event()
  */
+
+
+static gboolean event(GstPad *pad, GstObject *parent, GstEvent *event)
+{
+	GstCaps *caps;
+
+	switch(GST_EVENT_TYPE(event)) {
+	case GST_EVENT_CAPS:
+		gst_event_parse_caps(event, &caps);
+		if(!setcaps(pad, caps))
+			return FALSE;
+
+	default:
+		return gst_pad_event_default(pad, parent, event);
+	}
+}
 
 
 /*
@@ -156,29 +171,27 @@ static void finalize(GObject *object)
 	gst_object_unref(element->postcaps);
 	element->postcaps = NULL;
 
-	G_OBJECT_CLASS(parent_class)->finalize(object);
+	G_OBJECT_CLASS(gst_audio_rationalresample_parent_class)->finalize(object);
 }
 
 
-static void gst_audio_rationalresample_base_init(gpointer klass)
-{
-	/* no-op */
-}
-
+#define AUDIO_FORMATS "(string) {" GST_AUDIO_NE(F32) ", " GST_AUDIO_NE(F64) "}"
 
 static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE(
 	"sink",
 	GST_PAD_SINK,
 	GST_PAD_ALWAYS,
 	GST_STATIC_CAPS(
-		"audio/x-raw-float, " \
+		"audio/x-raw, " \
+			"format = " AUDIO_FORMATS ", " \
 			"channels = (int) [1, MAX], " \
 			"rate = (int) [1, MAX], " \
-			"width = (int) {32, 64}; " \
-		"audio/x-raw-float, " \
+			"layout = (string) interleaved; " \
+		"audio/x-raw, " \
+			"format = " AUDIO_FORMATS ", " \
 			"channels = (int) [1, MAX], " \
 			"rate = (fraction) [0/1, MAX], " \
-			"width = (int) {32, 64}"
+			"layout = (string) interleaved"
 	)
 );
 
@@ -187,15 +200,17 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE(
 	"src",
 	GST_PAD_SRC,
 	GST_PAD_ALWAYS,
-	GST_STATIC_CAPS(
-		"audio/x-raw-float, " \
+	GST_STATIC_CAPS( ""
+		"audio/x-raw, " \
+			"format = " AUDIO_FORMATS ", " \
 			"channels = (int) [1, MAX], " \
 			"rate = (int) [1, MAX], " \
-			"width = (int) {32, 64}; " \
-		"audio/x-raw-float, " \
+			"layout = (string) interleaved; " \
+		"audio/x-raw, " \
+			"format = " AUDIO_FORMATS ", " \
 			"channels = (int) [1, MAX], " \
 			"rate = (fraction) [0/1, MAX], " \
-			"width = (int) {32, 64}"
+			"layout = (string) interleaved"
 	)
 );
 
@@ -219,19 +234,19 @@ static void gst_audio_rationalresample_class_init(GstAudioRationalResampleClass 
 }
 
 
-static void gst_audio_rationalresample_init(GstAudioRationalResample *resample, GstAudioRationalResampleClass *klass)
+static void gst_audio_rationalresample_init(GstAudioRationalResample *resample)
 {
 	GstBin *bin = GST_BIN(resample);
 	GstElement *element = GST_ELEMENT(resample);
 	GstElement *prefaker, *audioresample, *postfaker;
 
-	resample->sinkpad = gst_ghost_pad_new_no_target_from_template("sink", gst_element_class_get_pad_template(GST_ELEMENT_CLASS(klass), "sink"));
-	gst_pad_set_setcaps_function(resample->sinkpad, setcaps);
+	resample->sinkpad = gst_ghost_pad_new_no_target_from_template("sink", gst_element_class_get_pad_template(GST_ELEMENT_GET_CLASS(resample), "sink"));
+	gst_pad_set_event_function(resample->sinkpad, event);
 	gst_object_ref(resample->sinkpad);	/* now two refs */
 	gst_element_add_pad(element, resample->sinkpad);	/* consume one ref */
 
-	resample->srcpad = gst_ghost_pad_new_no_target_from_template("src", gst_element_class_get_pad_template(GST_ELEMENT_CLASS(klass), "src"));
-	gst_pad_set_setcaps_function(resample->srcpad, setcaps);
+	resample->srcpad = gst_ghost_pad_new_no_target_from_template("src", gst_element_class_get_pad_template(GST_ELEMENT_GET_CLASS(resample), "src"));
+	gst_pad_set_event_function(resample->srcpad, event);
 	gst_object_ref(resample->srcpad);	/* now two refs */
 	gst_element_add_pad(element, resample->srcpad);	/* consume one ref */
 
@@ -248,8 +263,12 @@ static void gst_audio_rationalresample_init(GstAudioRationalResample *resample, 
 		NULL
 	);
 
-	gst_ghost_pad_set_target(GST_GHOST_PAD(resample->sinkpad), gst_element_get_pad(prefaker, "sink"));
-	gst_ghost_pad_set_target(GST_GHOST_PAD(resample->srcpad), gst_element_get_pad(postfaker, "src"));
+	gst_ghost_pad_set_target(GST_GHOST_PAD(resample->sinkpad), gst_element_get_static_pad(prefaker, "sink"));
+	gst_ghost_pad_set_target(GST_GHOST_PAD(resample->srcpad), gst_element_get_static_pad(postfaker, "src"));
 
 	gst_element_link_many(prefaker, resample->precaps, audioresample, resample->postcaps, postfaker, NULL);
+
+	/* FIXME:  remove when I can get caps negotiation working */
+	g_object_set(resample->precaps, "caps", gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, 1000000, NULL), NULL);
+	g_object_set(resample->postcaps, "caps", gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, 48 * 33333, NULL), NULL);
 }

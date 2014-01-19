@@ -1,5 +1,5 @@
 /*
- * GstAudioRationalResample
+ * GstFaceProcessor
  *
  * Copyright (C) 2012--2014  Kipp Cannon
  *
@@ -19,8 +19,8 @@
  */
 
 
-#ifndef __AUDIO_RATIONALRESAMPLE_H__
-#define __AUDIO_RATIONALRESAMPLE_H__
+#ifndef __FACE_PROCESSOR_H__
+#define __FACE_PROCESSOR_H__
 
 
 /*
@@ -48,41 +48,38 @@ G_BEGIN_DECLS
  */
 
 
-#define GST_TYPE_AUDIO_RATIONALRESAMPLE \
-	(gst_audio_rationalresample_get_type())
-#define GST_AUDIO_RATIONALRESAMPLE(obj) \
-	(G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_AUDIO_RATIONALRESAMPLE, GstAudioRationalResample))
-#define GST_AUDIO_RATIONALRESAMPLE_CLASS(klass) \
-	(G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_AUDIO_RATIONALRESAMPLE, GstAudioRationalResampleClass))
-#define GST_AUDIO_RATIONALRESAMPLE_GET_CLASS(obj) \
-	(G_TYPE_INSTANCE_GET_CLASS((obj), GST_TYPE_AUDIO_RATIONALRESAMPLE, GstAudioRationalResampleClass))
-#define GST_IS_AUDIO_RATIONALRESAMPLE(obj) \
-	(G_TYPE_CHECK_INSTANCE_TYPE((obj), GST_TYPE_AUDIO_RATIONALRESAMPLE))
-#define GST_IS_AUDIO_RATIONALRESAMPLE_CLASS(klass) \
-	(G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_AUDIO_RATIONALRESAMPLE))
+#define GST_TYPE_FACE_PROCESSOR \
+	(gst_face_processor_get_type())
+#define GST_FACE_PROCESSOR(obj) \
+	(G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_FACE_PROCESSOR, GstFaceProcessor))
+#define GST_FACE_PROCESSOR_CLASS(klass) \
+	(G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_FACE_PROCESSOR, GstFaceProcessorClass))
+#define GST_FACE_PROCESSOR_GET_CLASS(obj) \
+	(G_TYPE_INSTANCE_GET_CLASS((obj), GST_TYPE_FACE_PROCESSOR, GstFaceProcessorClass))
+#define GST_IS_FACE_PROCESSOR(obj) \
+	(G_TYPE_CHECK_INSTANCE_TYPE((obj), GST_TYPE_FACE_PROCESSOR))
+#define GST_IS_FACE_PROCESSOR_CLASS(klass) \
+	(G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_FACE_PROCESSOR))
 
 
-typedef struct _GstAudioRationalResampleClass GstAudioRationalResampleClass;
-typedef struct _GstAudioRationalResample GstAudioRationalResample;
+typedef struct _GstFaceProcessorClass GstFaceProcessorClass;
+typedef struct _GstFaceProcessor GstFaceProcessor;
 
 
-struct _GstAudioRationalResampleClass {
+struct _GstFaceProcessorClass {
 	GstBinClass parent_class;
 };
 
 
 /**
- * GstAudioRationalResample
+ * GstFaceProcessor
  */
 
 
-struct _GstAudioRationalResample {
+struct _GstFaceProcessor {
 	GstBin bin;
 
-	GstPad *sinkpad;
-	GstPad *srcpad;
-	GstElement *precaps;
-	GstElement *postcaps;
+	GstElement *face2rgb;
 };
 
 
@@ -95,10 +92,10 @@ struct _GstAudioRationalResample {
  */
 
 
-GType gst_audio_rationalresample_get_type(void);
+GType gst_face_processor_get_type(void);
 
 
 G_END_DECLS
 
 
-#endif	/* __AUDIO_RATIONALRESAMPLE_H__ */
+#endif	/* __FACE_PROCESSOR_H__ */

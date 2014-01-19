@@ -10,21 +10,16 @@
 #
 
 
+import logging
 from optparse import OptionParser
 import os
 import sys
 
 
-import pygtk
-pygtk.require("2.0")
-import gobject
-gobject.threads_init()
-import pygst
-pygst.require("0.10")
-import gst
-
-
-from cardiacam import videotypes
+from gi.repository import GObject
+GObject.threads_init()
+from gi.repository import Gst
+Gst.init(None)
 
 
 __author__ = "Kipp Cannon <kcannon@cita.utoronto.ca>"
@@ -42,14 +37,13 @@ __date__ = "FIXME"
 
 
 def mkelem(pipeline, src, elem_type_name, **properties):
-	if "name" in properties:
-		elem = gst.element_factory_make(elem_type_name, properties.pop("name"))
-	else:
-		elem = gst.element_factory_make(elem_type_name)
+	elem = Gst.ElementFactory.make(elem_type_name, properties.pop("name", None))
+	if elem is None:
+		raise ValueError("failed to create element '%s'" % elem_type_name)
 	for name, value in properties.items():
 		elem.set_property(name.replace("_", "-"), value)
 	pipeline.add(elem)
-	if isinstance(src, gst.Pad):
+	if isinstance(src, Gst.Pad):
 		src.get_parent_element().link_pads(src, elem, None)
 	elif src is not None:
 		src.link(elem)
@@ -67,7 +61,7 @@ def write_dump_dot(pipeline, filestem, verbose = False):
 	"""
 	if "GST_DEBUG_DUMP_DOT_DIR" not in os.environ:
 		raise ValueError("cannot write pipeline, environment variable GST_DEBUG_DUMP_DOT_DIR is not set")
-	gst.DEBUG_BIN_TO_DOT_FILE(pipeline, gst.DEBUG_GRAPH_SHOW_ALL, filestem)
+	Gst.debug_bin_to_dot_file(pipeline, Gst.DebugGraphDetails.ALL, filestem)
 	if verbose:
 		print >>sys.stderr, "Wrote pipeline to %s" % os.path.join(os.environ["GST_DEBUG_DUMP_DOT_DIR"], "%s.dot" % filestem)
 
@@ -85,7 +79,8 @@ class src_deferred_link(object):
 
 	@staticmethod
 	def no_more_pads(element, srcpadname):
-		raise ValueError("<%s>: no pad named '%s'" % (element.get_name(), srcpadname))
+		#write_dump_dot(element.get_parent(), "pipeline")
+		raise ValueError("%s: no pad named '%s'" % (element.get_name(), srcpadname))
 
 
 #
@@ -103,115 +98,18 @@ def parse_command_line():
 		usage = "%prog [options] filename",
 		description = "Extract cardiac pulse from a video of a patient."
 	)
+	parser.add_option("--input", metavar = "filename", default = "/dev/video0", help = "Set the name of the input file (default = \"/dev/video0\").  If the filename starts with \"/dev/\" then it is assumed to be a V4L device otherwise it is assumed to be a video file.")
+	parser.add_option("--brightness", metavar = "[-1, +1]", type = "float", help = "Adjust brightness for face detection (skin colour is computed from original video).")
+	parser.add_option("--contrast", metavar = "[0, 2]", type = "float", help = "Adjust contrast for face detection (skin colour is computed from original video).")
 	parser.add_option("--no-display", action = "store_true", help = "Do not display video in window (allows code to run faster than realtime).")
-	parser.add_option("--input", metavar = "filename", default = "/dev/video0", help = "Set the name of the input file (default = \"/dev/video0\").  If the filename starts with \"/dev/\" then it is assumed to be a V4L device.")
+	parser.add_option("-v", "--verbose", action = "store_true", help = "Be verbose.")
 
 	options, filenames = parser.parse_args()
 
+	if options.verbose:
+		logging.basicConfig(level = logging.INFO)
+
 	return options, filenames
-
-
-#
-# =============================================================================
-#
-#                              Face Processor Bin
-#
-# =============================================================================
-#
-
-
-class face_processor(gst.Bin):
-	"""
-	Face processor bin.
-	"""
-
-	__gstdetails__ = (
-		"Face Processor",
-		"Filter",
-		__doc__,
-		__author__
-	)
-
-	__gproperties__ = {
-		"face-x" : (
-			gobject.TYPE_INT,
-			"face-x",
-			"left edge of face",
-			0, gobject.G_MAXINT, 0,
-			gobject.PARAM_READWRITE | gobject.PARAM_CONSTRUCT
-		),
-		"face-y" : (
-			gobject.TYPE_INT,
-			"face-y",
-			"top of face",
-			0, gobject.G_MAXINT, 0,
-			gobject.PARAM_READWRITE | gobject.PARAM_CONSTRUCT
-		),
-		"face-width" : (
-			gobject.TYPE_INT,
-			"face-width",
-			"width of face",
-			0, gobject.G_MAXINT, 0,
-			gobject.PARAM_READWRITE | gobject.PARAM_CONSTRUCT
-		),
-		"face-height" : (
-			gobject.TYPE_INT,
-			"face-height",
-			"height of face",
-			0, gobject.G_MAXINT, 0,
-			gobject.PARAM_READWRITE | gobject.PARAM_CONSTRUCT
-		)
-	}
-
-	def do_set_property(self, prop, val):
-		if prop.name in ("face-x", "face-y", "face-width", "face-height"):
-			self.face2rgb.set_property(prop.name, val)
-		else:
-			raise AssertionError
-
-	def do_get_property(self, prop):
-		if prop.name in ("face-x", "face-y", "face-width", "face-height"):
-			return self.face2rgb.get_property(prop.name)
-		else:
-			raise AssertionError
-
-	def __init__(self):
-		#
-		# initialize
-		#
-
-		super(face_processor, self).__init__()
-
-		#
-		# convert to RGB time series at video native frame rate
-		#
-
-		self.face2rgb = head = mkelem(self, None, "face2rgb", gamma = 2.2)
-		self.add_pad(gst.GhostPad("sink", head.get_pad("sink")))
-
-		#
-		# resample to 48 Hz (integer sample rate = compatible with
-		# all audio elements)
-		#
-
-		head = mkelem(self, mkelem(self, head, "audiorationalresample"), "capsfilter", caps = gst.Caps("audio/x-raw-float, rate=48"))
-
-		#
-		# band pass filter
-		#
-
-		head = mkelem(self, head, "audiochebband", lower_frequency = .5, upper_frequency = 5., poles = 4)
-		#head = mkelem(self, head, "audiowsincband", mode = 0, lower_frequency = .5, upper_frequency = 5., window = 4, length = 101)
-
-		#
-		# dump to text file
-		#
-
-		mkelem(self, mkelem(self, mkelem(self, head, "queue"), "lal_nxydump"), "fdsink", fd = 1, sync = False, async = False)
-
-
-gobject.type_register(face_processor)
-gst.element_register(face_processor, face_processor.__name__)
 
 
 #
@@ -224,11 +122,17 @@ gst.element_register(face_processor, face_processor.__name__)
 
 
 class Handler(object):
+	# FIXME:  remove when gstreamer wrapping can retrieve message
+	# object properly
+	import re
+	facesparser = re.compile(r'.*faces=[^{]*\{ *(?:"([^"]*)")+ *\}.*')
+	faceparser = re.compile(r'(?P<name>[^ =]*)=\([^)]*\)(?P<value>[^ ,;]*)')
+
 	def __init__(self, mainloop, pipeline):
 		self.mainloop = mainloop
 		self.pipeline = pipeline
 
-		self.src = None
+		self.video_src = None
 		self.face_processors = []
 
 		bus = pipeline.get_bus()
@@ -236,16 +140,16 @@ class Handler(object):
 		bus.connect("message", self.on_message)
 
 	def on_message(self, bus, message):
-		if message.type == gst.MESSAGE_ELEMENT:
-			s = message.structure
+		if message.type == Gst.MessageType.ELEMENT:
+			s = message.get_structure()
 			if s.get_name() == "facedetect":
 				self.do_facedetect_message(message.src, s)
-		elif message.type == gst.MESSAGE_EOS:
-			self.pipeline.set_state(gst.STATE_NULL)
+		elif message.type == Gst.MessageType.EOS:
+			self.pipeline.set_state(Gst.State.NULL)
 			self.mainloop.quit()
-		elif message.type == gst.MESSAGE_ERROR:
+		elif message.type == Gst.MessageType.ERROR:
 			gerr, dbgmsg = message.parse_error()
-			print >>sys.stderr, "error (%s:%d '%s'): %s" % (gerr.domain, gerr.code, gerr.message, dbgmsg)
+			logging.fatal("(%s:%d '%s'): %s" % (gerr.domain, gerr.code, gerr.message, dbgmsg))
 			sys.exit(1)
 
 	def do_facedetect_message(self, elem, s):
@@ -282,22 +186,24 @@ class Handler(object):
 		#		top-left corner and extent of eyes
 		#
 
-		faces = s["faces"]
+		# FIXME:  return to .get_value() when gstreamer wrapping
+		# can handle messages properly
+		#faces = s.get_value("faces")
+		faces = [dict((name, int(value)) for name, value in self.faceparser.findall(face)) for face in self.facesparser.findall(s.to_string().replace("\\", ""))]
 
 		#
 		# do we need to add face processors?
 		#
 
 		if len(faces) > len(self.face_processors):
-			self.pipeline.set_state(gst.STATE_PAUSED)
-			while len(faces) > len(self.face_processors) and self.src is not None:
-				queue = mkelem(self.pipeline, None, "queue", max_size_time = gst.SECOND)
-				queue.set_state(gst.STATE_PAUSED)
-				self.face_processors.append(mkelem(self.pipeline, queue, "face_processor"))
-				self.face_processors[-1].set_state(gst.STATE_PAUSED)
-				self.src.link(queue)
-			self.pipeline.set_state(gst.STATE_PLAYING)
-			#write_dump_dot(self.pipeline, "blah", verbose = True)
+			self.pipeline.set_state(Gst.State.PAUSED)
+			while len(faces) > len(self.face_processors) and self.video_src is not None:
+				queue = mkelem(self.pipeline, None, "queue", max_size_time = Gst.SECOND)
+				queue.set_state(Gst.State.PAUSED)
+				self.face_processors.append(mkelem(self.pipeline, queue, "faceprocessor"))
+				self.face_processors[-1].set_state(Gst.State.PAUSED)
+				self.video_src.link(queue)
+			self.pipeline.set_state(Gst.State.PLAYING)
 
 		#
 		# do we need to remove any?
@@ -312,47 +218,84 @@ class Handler(object):
 		# update face locations
 		#
 
-		for face_processor, face in zip(self.face_processors, faces):
-			face_processor.set_property("face-x", face["x"])
-			face_processor.set_property("face-y", face["y"])
-			face_processor.set_property("face-width", face["width"])
-			face_processor.set_property("face-height", face["height"])
+		for faceprocessor, face in zip(self.face_processors, faces):
+			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::face-x", face["x"])
+			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::face-y", face["y"])
+			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::face-width", face["width"])
+			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::face-height", face["height"])
+			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::nose-x", face["nose->x"])
+			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::nose-y", face["nose->y"])
+			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::nose-width", face["nose->width"])
+			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::nose-height", face["nose->height"])
+		#write_dump_dot(self.pipeline, "blah", verbose = True)
 
 
 options, filenames = parse_command_line()
 
 
-pipeline = gst.Pipeline("pipeline")
-mainloop = gobject.MainLoop()
+pipeline = Gst.Pipeline()
+mainloop = GObject.MainLoop()
 handler = Handler(mainloop, pipeline)
 
+#
+# get video stream
+#
 
 if options.input.startswith("/dev/"):
-	src = mkelem(pipeline, mkelem(pipeline, None, "v4l2src", device = options.input), "ffmpegcolorspace")
+	src = mkelem(pipeline, mkelem(pipeline, None, "v4l2src", device = options.input), "videoconvert")
 else:
-	src = mkelem(pipeline, mkelem(pipeline, None, "filesrc", location = options.input), "decodebin2")
-	elem = mkelem(pipeline, None, "ffmpegcolorspace")
-	src_deferred_link(src, "src0", elem.get_pad("sink"))
+	src = mkelem(pipeline, mkelem(pipeline, None, "filesrc", location = options.input), "decodebin")
+	elem = mkelem(pipeline, None, "videoconvert")
+	src_deferred_link(src, "src_0", elem.get_static_pad("sink"))
 	src = elem
 
-handler.src = src = mkelem(pipeline, mkelem(pipeline, src, "capsfilter", caps = gst.Caps(videotypes.video_caps)), "tee")
+handler.video_src = src = mkelem(pipeline, mkelem(pipeline, src, "capsfilter", caps = Gst.Caps.from_string("video/x-raw, format=(string)RGB")), "tee")
+
+#
+# adjust brightness and contrast before face detection if requested
+#
+
+if options.brightness is not None or options.contrast is not None:
+	kwargs = {}
+	if options.brightness is not None:
+		kwargs["brightness"] = options.brightness
+	if options.contrast is not None:
+		kwargs["contrast"] = options.contrast
+	src = mkelem(pipeline, src, "videobalance", **kwargs)
+
+#
+# do face detection.  auto-adjust minimum face size to fixed fraction of
+# video frame (default is 1x1 which is very CPU-intensive)
+#
 
 def facedetect_sink_caps_hander(pad, pspec, ignored):
 	caps = pad.get_property("caps")
 	if caps is not None:
+		s = caps.get_structure(0)
+		success, width = s.get_int("width")
+		success, height = s.get_int("height")
+		min_width = max(width // 8, 1)
+		min_height = max(height // 6, 1)
+		logging.info("video is %dx%d pixels, setting minimum face size to %dx%d pixels" % (width, height, min_width, min_height))
 		elem = pad.get_parent()
-		s = caps[0]
-		elem.set_property("min-size-width", s["width"] // 6)
-		elem.set_property("min-size-height", s["height"] // 4)
-src = mkelem(pipeline, src, "facedetect", scale_factor = 1.1)
-src.get_pad("sink").connect("notify::caps", facedetect_sink_caps_hander, None)
+		elem.set_property("min-size-width", min_width)
+		elem.set_property("min-size-height", min_height)
+src = mkelem(pipeline, src, "facedetect", updates = 1, scale_factor = 1.1, display = not options.no_display)
+src.get_static_pad("sink").connect("notify::caps", facedetect_sink_caps_hander, None)
 
-if not options.no_display:
-	src = mkelem(pipeline, src, "queue", max_size_buffers = 0, max_size_time = 0, max_size_bytes = 0)
-	mkelem(pipeline, mkelem(pipeline, src, "ffmpegcolorspace"), "autovideosink")
-else:
+#
+# display video, or not
+#
+
+if options.no_display:
 	mkelem(pipeline, src, "fakesink", sync = False, async = False)
+else:
+	src = mkelem(pipeline, src, "queue", max_size_buffers = 0, max_size_time = 2 * Gst.SECOND, max_size_bytes = 0)
+	mkelem(pipeline, mkelem(pipeline, src, "videoconvert"), "autovideosink")
 
-pipeline.set_state(gst.STATE_PLAYING)
+#
+# run pipeline
+#
+
+pipeline.set_state(Gst.State.PLAYING)
 mainloop.run()
-

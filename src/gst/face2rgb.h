@@ -1,7 +1,7 @@
 /*
  * GstFace2RGB
  *
- * Copyright (C) 2013  Kipp Cannon
+ * Copyright (C) 2013,2014  Kipp Cannon
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -83,12 +83,15 @@ struct _GstFace2RGB {
 	gdouble gamma;
 	gint face_x, face_y;	/* pixels */
 	gint face_width, face_height;	/* pixels */
+	gint nose_x, nose_y;	/* pixels */
+	gint nose_width, nose_height;	/* pixels */
 	gboolean need_new_mask;
 
 	gint width, height;	/* pixels */
 	gint stride;	/* bytes */
 	gint *mask;
-	gdouble out_over_in;
+	gdouble bg_over_forehead_area_ratio;
+	gdouble bg_over_cheek_area_ratio;
 
 	guint64 offset;
 };

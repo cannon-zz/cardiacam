@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013  Kipp Cannon
+ * Copyright (C) 2013,2014  Kipp Cannon
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,6 +43,7 @@
 #include <audioratefaker.h>
 #include <videoratefaker.h>
 #include <face2rgb.h>
+#include <faceprocessor.h>
 
 
 /*
@@ -64,6 +65,7 @@ static gboolean plugin_init(GstPlugin *plugin)
 		{"audioratefaker", GST_TYPE_AUDIO_RATE_FAKER},
 		{"videoratefaker", GST_TYPE_VIDEO_RATE_FAKER},
 		{"face2rgb", GST_TYPE_FACE_2_RGB},
+		{"faceprocessor", GST_TYPE_FACE_PROCESSOR},
 		{NULL, 0},
 	};
 
@@ -88,4 +90,4 @@ static gboolean plugin_init(GstPlugin *plugin)
  */
 
 
-GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, "cardiacam", "Cardiacam plugin", plugin_init, PACKAGE_VERSION, "GPL", PACKAGE_NAME, "http://boron.homeunix.org")
+GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, cardiacam, "Cardiacam plugin", plugin_init, PACKAGE_VERSION, "GPL", PACKAGE_NAME, "http://boron.roadcake.org")

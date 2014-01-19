@@ -1,7 +1,7 @@
 /*
  * GstFace2RGB
  *
- * Copyright (C) 2013  Kipp Cannon
+ * Copyright (C) 2013,2014  Kipp Cannon
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,7 +33,9 @@
 
 #include <glib.h>
 #include <gst/gst.h>
+#include <gst/audio/audio.h>
 #include <gst/base/gstbasetransform.h>
+#include <gst/video/video.h>
 
 
 #include <face2rgb.h>
@@ -44,6 +46,18 @@
 #define DEFAULT_FACE_Y 0
 #define DEFAULT_FACE_WIDTH 0
 #define DEFAULT_FACE_HEIGHT 0
+#define DEFAULT_NOSE_X 0
+#define DEFAULT_NOSE_Y 0
+#define DEFAULT_NOSE_WIDTH 0
+#define DEFAULT_NOSE_HEIGHT 0
+
+
+enum mask_t {
+	MASK_BG = 0,
+	MASK_FOREHEAD,
+	MASK_CHEEK,
+	MASK_UNUSED
+};
 
 
 /*
@@ -59,13 +73,13 @@
 GST_DEBUG_CATEGORY_STATIC(GST_CAT_DEFAULT);
 
 
-static void additional_initializations(GType type)
+static void additional_initializations(void)
 {
 	GST_DEBUG_CATEGORY_INIT(GST_CAT_DEFAULT, "face2rgb", 0, "face2rgb element");
 }
 
 
-GST_BOILERPLATE_FULL(GstFace2RGB, gst_face_2_rgb, GstBaseTransform, GST_TYPE_BASE_TRANSFORM, additional_initializations);
+G_DEFINE_TYPE_WITH_CODE(GstFace2RGB, gst_face_2_rgb, GST_TYPE_BASE_TRANSFORM, additional_initializations(););
 
 
 /*
@@ -81,23 +95,29 @@ static void make_mask(GstFace2RGB *element)
 {
 	gint *mask = element->mask = g_realloc_n(element->mask, element->height * element->width, sizeof(*element->mask));
 	gint x, y;
-	gint count_in = 0, count_out = 0;
+	gint area_forehead = 0, area_cheek = 0, area_bg = 0;
 	gint face_width = element->face_width > 0 ? element->face_width : element->width;
 	gint face_height = element->face_height > 0 ? element->face_height : element->height;
 
 	/*
-	 * set mask to 1 outside of face ellipse
+	 * mark background, forehead, and cheek areas in mask
 	 */
 
 	for(y = 0; y < element->height; y++) {
 		gdouble y_squared = pow(2.0 * (y - element->face_y) / (face_height - 1) - 1, 2);
 		for(x = 0; x < element->width; x++, mask++) {
 			if(pow(2.0 * (x - element->face_x) / (face_width - 1) - 1, 2) + y_squared > 1) {
-				*mask = 1;
-				count_out++;
+				*mask = MASK_BG;
+				area_bg++;
+			} else if(y < element->nose_y) {
+				*mask = MASK_FOREHEAD;
+				area_forehead++;
+			} else if(x < element->nose_x || x > element->nose_x + element->nose_width) {
+				*mask = MASK_CHEEK;
+				area_cheek++;
 			} else {
-				*mask = 0;
-				count_in++;
+				/* unused pixel */
+				*mask = MASK_UNUSED;
 			}
 		}
 	}
@@ -106,7 +126,8 @@ static void make_mask(GstFace2RGB *element)
 	 * non-face pixel count to face pixel count ratio
 	 */
 
-	element->out_over_in = (double) count_out / count_in;
+	element->bg_over_forehead_area_ratio = (double) area_bg / area_forehead;
+	element->bg_over_cheek_area_ratio = (double) area_bg / area_cheek;
 }
 
 
@@ -119,30 +140,21 @@ static void make_mask(GstFace2RGB *element)
  */
 
 
-static gboolean get_unit_size(GstBaseTransform *trans, GstCaps *caps, guint *size)
+static gboolean get_unit_size(GstBaseTransform *trans, GstCaps *caps, gsize *size)
 {
 	GstStructure *str;
 	gboolean success = TRUE;
 
 	str = gst_caps_get_structure(caps, 0);
-	if(!g_strcmp0(gst_structure_get_name(str), "audio/x-raw-float")) {
-		gint width, channels;
-		success &= gst_structure_get_int(str, "channels", &channels);
-		success &= gst_structure_get_int(str, "width", &width);
+	if(!g_strcmp0(gst_structure_get_name(str), "audio/x-raw")) {
+		/* can't use gst_audio_info_from_caps():  doesn't
+		 * understand non-integer sample rates */
+		*size = 6 * 8;	/* FIXME:  hard-coded to 6 double-precision channels */
+	} else if(!g_strcmp0(gst_structure_get_name(str), "video/x-raw")) {
+		GstVideoInfo info;
+		success = gst_video_info_from_caps(&info, caps);
 		if(success)
-			*size = width / 8 * channels;
-	} else if(!g_strcmp0(gst_structure_get_name(str), "video/x-raw-rgb")) {
-		gint width, height, bpp;
-		success &= gst_structure_get_int(str, "width", &width);
-		success &= gst_structure_get_int(str, "height", &height);
-		success &= gst_structure_get_int(str, "bpp", &bpp);
-		if(success) {
-			gint stride = bpp / 8 * width;
-			/* round up to multiple of 4 */
-			if(stride & 0x3)
-				stride += 4 - (stride & 0x3);
-			*size = height * stride;
-		}
+			*size = GST_VIDEO_INFO_SIZE(&info);
 	} else
 		success = FALSE;
 
@@ -153,7 +165,7 @@ static gboolean get_unit_size(GstBaseTransform *trans, GstCaps *caps, guint *siz
 }
 
 
-static GstCaps *transform_caps(GstBaseTransform *trans, GstPadDirection direction, GstCaps *caps)
+static GstCaps *transform_caps(GstBaseTransform *trans, GstPadDirection direction, GstCaps *caps, GstCaps *filter)
 {
 	const GValue *rate;
 	guint n;
@@ -193,23 +205,14 @@ static GstCaps *transform_caps(GstBaseTransform *trans, GstPadDirection directio
 static gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outcaps)
 {
 	GstFace2RGB *element = GST_FACE_2_RGB(trans);
-	GstStructure *str = gst_caps_get_structure(incaps, 0);
-	gint width, height, bpp;
+	GstVideoInfo info;
 	gboolean success = TRUE;
 
-	success &= gst_structure_get_int(str, "width", &width);
-	success &= gst_structure_get_int(str, "height", &height);
-	success &= gst_structure_get_int(str, "bpp", &bpp);
+	success &= gst_video_info_from_caps(&info, incaps);
 	if(success) {
-		gint stride = bpp / 8 * width;
-		/* round up to multiple of 4 */
-		if(stride & 0x3)
-			stride += 4 - (stride & 0x3);
-
-		element->width = width;
-		element->height = height;
-		element->stride = stride;
-
+		element->width = GST_VIDEO_INFO_WIDTH(&info);
+		element->height = GST_VIDEO_INFO_HEIGHT(&info);
+		element->stride = GST_VIDEO_INFO_PLANE_STRIDE(&info, 0);
 		element->need_new_mask = TRUE;
 	} else
 		GST_ERROR_OBJECT(element, "could not parse caps");
@@ -231,14 +234,15 @@ static gboolean start(GstBaseTransform *trans)
 static GstFlowReturn transform(GstBaseTransform *trans, GstBuffer *inbuf, GstBuffer *outbuf)
 {
 	GstFace2RGB *element = GST_FACE_2_RGB(trans);
-	gdouble *out = (gdouble *) GST_BUFFER_DATA(outbuf);
-	guchar *row = GST_BUFFER_DATA(inbuf);
-	guchar *last_row = row + element->height * element->stride;
+	const gdouble gamma = element->gamma;
+	GstMapInfo srcmap, dstmap;
+	gdouble *out;
+	guchar *row, *last_row;
 	gint *mask;
-	gdouble face_r = 0.0, bg_r = 0.0;
-	gdouble face_g = 0.0, bg_g = 0.0;
-	gdouble face_b = 0.0, bg_b = 0.0;
-	gdouble face_y, bg_y;
+	gdouble forehead_r = 0.0, cheek_r = 0.0, bg_r = 0.0;
+	gdouble forehead_g = 0.0, cheek_g = 0.0, bg_g = 0.0;
+	gdouble forehead_b = 0.0, cheek_b = 0.0, bg_b = 0.0;
+	gdouble bg_y;
 
 	if(element->need_new_mask) {
 		make_mask(element);
@@ -252,45 +256,61 @@ static GstFlowReturn transform(GstBaseTransform *trans, GstBuffer *inbuf, GstBuf
 	 * components
 	 */
 
+	gst_buffer_map(inbuf, &srcmap, GST_MAP_READ);
+	row = (guchar *) srcmap.data;
+	last_row = row + element->height * element->stride;
 	for(; row < last_row; row += element->stride) {
 		guchar *in = row;
 		gint col;
 		for(col = 0; col < element->width; col++) {
-			gdouble r = pow(*in++ / 255.0, element->gamma);
-			gdouble g = pow(*in++ / 255.0, element->gamma);
-			gdouble b = pow(*in++ / 255.0, element->gamma);
-			if(!*mask++) {
-				face_r += r;
-				face_g += g;
-				face_b += b;
-			} else {
-#if 1
+			gdouble r = pow(*in++ / 255.0, gamma);
+			gdouble g = pow(*in++ / 255.0, gamma);
+			gdouble b = pow(*in++ / 255.0, gamma);
+			switch((enum mask_t) *mask++) {
+			case MASK_BG:
 				bg_r += r;
 				bg_g += g;
 				bg_b += b;
-#else
-				bg_r++;
-				bg_g++;
-				bg_b++;
-#endif
+				break;
+
+			case MASK_FOREHEAD:
+				forehead_r += r;
+				forehead_g += g;
+				forehead_b += b;
+				break;
+
+			case MASK_CHEEK:
+				cheek_r += r;
+				cheek_g += g;
+				cheek_b += b;
+				break;
+
+			case MASK_UNUSED:
+				break;
 			}
 		}
 	}
+	gst_buffer_unmap(inbuf, &srcmap);
 
 	/*
-	 * compute face and background brightness
+	 * compute background brightness
 	 */
 
-	face_y = (0.2126 * face_r + 0.7152 * face_g + 0.0722 * face_b);
-	bg_y = (0.2126 * bg_r + 0.7152 * bg_g + 0.0722 * bg_b);
+	bg_y = 0.2126 * bg_r + 0.7152 * bg_g + 0.0722 * bg_b;
 
 	/*
 	 * set output sample values
 	 */
 
-	out[0] = face_r * element->out_over_in / bg_y;
-	out[1] = face_g * element->out_over_in / bg_y;
-	out[2] = face_b * element->out_over_in / bg_y;
+	gst_buffer_map(outbuf, &dstmap, GST_MAP_WRITE);
+	out = (gdouble *) dstmap.data;
+	out[0] = forehead_r * element->bg_over_forehead_area_ratio / bg_y;
+	out[1] = forehead_g * element->bg_over_forehead_area_ratio / bg_y;
+	out[2] = forehead_b * element->bg_over_forehead_area_ratio / bg_y;
+	out[3] = cheek_r * element->bg_over_cheek_area_ratio / bg_y;
+	out[4] = cheek_g * element->bg_over_cheek_area_ratio / bg_y;
+	out[5] = cheek_b * element->bg_over_cheek_area_ratio / bg_y;
+	gst_buffer_unmap(outbuf, &dstmap);
 
 	/*
 	 * fix offset on output buffers
@@ -322,7 +342,11 @@ enum property {
 	ARG_FACE_X,
 	ARG_FACE_Y,
 	ARG_FACE_WIDTH,
-	ARG_FACE_HEIGHT
+	ARG_FACE_HEIGHT,
+	ARG_NOSE_X,
+	ARG_NOSE_Y,
+	ARG_NOSE_WIDTH,
+	ARG_NOSE_HEIGHT,
 };
 
 
@@ -354,6 +378,26 @@ static void set_property(GObject *object, enum property prop_id, const GValue *v
 
 	case ARG_FACE_HEIGHT:
 		element->face_height = g_value_get_int(value);
+		element->need_new_mask = TRUE;
+		break;
+
+	case ARG_NOSE_X:
+		element->nose_x = g_value_get_int(value);
+		element->need_new_mask = TRUE;
+		break;
+
+	case ARG_NOSE_Y:
+		element->nose_y = g_value_get_int(value);
+		element->need_new_mask = TRUE;
+		break;
+
+	case ARG_NOSE_WIDTH:
+		element->nose_width = g_value_get_int(value);
+		element->need_new_mask = TRUE;
+		break;
+
+	case ARG_NOSE_HEIGHT:
+		element->nose_height = g_value_get_int(value);
 		element->need_new_mask = TRUE;
 		break;
 
@@ -393,6 +437,22 @@ static void get_property(GObject *object, enum property prop_id, GValue *value, 
 		g_value_set_int(value, element->face_height);
 		break;
 
+	case ARG_NOSE_X:
+		g_value_set_int(value, element->nose_x);
+		break;
+
+	case ARG_NOSE_Y:
+		g_value_set_int(value, element->nose_y);
+		break;
+
+	case ARG_NOSE_WIDTH:
+		g_value_set_int(value, element->nose_width);
+		break;
+
+	case ARG_NOSE_HEIGHT:
+		g_value_set_int(value, element->nose_height);
+		break;
+
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
 		break;
@@ -413,13 +473,7 @@ static void finalize(GObject *object)
 	 * chain to parent class' finalize() method
 	 */
 
-	G_OBJECT_CLASS(parent_class)->finalize(object);
-}
-
-
-static void gst_face_2_rgb_base_init(gpointer klass)
-{
-	/* no-op */
+	G_OBJECT_CLASS(gst_face_2_rgb_parent_class)->finalize(object);
 }
 
 
@@ -428,13 +482,8 @@ static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE(
 	GST_PAD_SINK,
 	GST_PAD_ALWAYS,
 	GST_STATIC_CAPS(
-		"video/x-raw-rgb, " \
-		"bpp = (int) 24, " \
-		"depth = (int) 24, " \
-		"endianness = (int) 4321, " \
-		"red_mask = (int) 16711680, " \
-		"green_mask = (int) 65280, " \
-		"blue_mask = (int) 255, " \
+		"video/x-raw, " \
+		"format = (string) RGB, " \
 		"width = (int) [1, MAX], " \
 		"height = (int) [1, MAX], " \
 		"framerate = (fraction) [0/1, 2147483647/1]"
@@ -447,11 +496,12 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE(
 	GST_PAD_SRC,
 	GST_PAD_ALWAYS,
 	GST_STATIC_CAPS(
-		"audio/x-raw-float, " \
-		"channels = (int) 3, " \
-		"endianness = (int) BYTE_ORDER, " \
-		"rate = (fraction) [0/1, 2147483647/1], " \
-		"width = (int) 64"
+		"audio/x-raw, " \
+			"format = (string) " GST_AUDIO_NE(F64) ", " \
+			"channels = (int) 6, " \
+			"rate = (fraction) [0/1, MAX], " \
+			"layout = (string) interleaved, " \
+			"channel-mask = (bitmask) 0"
 	)
 );
 
@@ -475,7 +525,7 @@ static void gst_face_2_rgb_class_init(GstFace2RGBClass *klass)
 	gst_element_class_set_details_simple(element_class, 
 		"Face to RGB time series",
 		"Filter/Video",
-		"Convert a video stream to red, green, blue time series",
+		"Convert a video stream to forehead and cheek, red, green, blue time series triples",
 		"Kipp Cannon <kipp.cannon@ligo.org>"
 	);
 
@@ -539,12 +589,60 @@ static void gst_face_2_rgb_class_init(GstFace2RGBClass *klass)
 		)
 	);
 
+	g_object_class_install_property(
+		gobject_class,
+		ARG_NOSE_X,
+		g_param_spec_int(
+			"nose-x",
+			"nose X",
+			"Left edge of nose.",
+			G_MININT, G_MAXINT, DEFAULT_NOSE_X,
+			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
+		)
+	);
+
+	g_object_class_install_property(
+		gobject_class,
+		ARG_NOSE_Y,
+		g_param_spec_int(
+			"nose-y",
+			"nose y",
+			"Top edge of nose.",
+			G_MININT, G_MAXINT, DEFAULT_NOSE_Y,
+			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
+		)
+	);
+
+	g_object_class_install_property(
+		gobject_class,
+		ARG_NOSE_WIDTH,
+		g_param_spec_int(
+			"nose-width",
+			"nose width",
+			"Width of nose (0 = use width of video).",
+			G_MININT, G_MAXINT, DEFAULT_NOSE_WIDTH,
+			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
+		)
+	);
+
+	g_object_class_install_property(
+		gobject_class,
+		ARG_NOSE_HEIGHT,
+		g_param_spec_int(
+			"nose-height",
+			"nose height",
+			"Height of nose (0 = use height of video).",
+			G_MININT, G_MAXINT, DEFAULT_NOSE_HEIGHT,
+			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
+		)
+	);
+
 	gst_element_class_add_pad_template(element_class, gst_static_pad_template_get(&src_factory));
 	gst_element_class_add_pad_template(element_class, gst_static_pad_template_get(&sink_factory));
 }
 
 
-static void gst_face_2_rgb_init(GstFace2RGB *element, GstFace2RGBClass *klass)
+static void gst_face_2_rgb_init(GstFace2RGB *element)
 {
 	gst_base_transform_set_gap_aware(GST_BASE_TRANSFORM(element), TRUE);
 

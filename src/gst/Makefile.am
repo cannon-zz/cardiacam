@@ -5,8 +5,9 @@ libcardiacam_la_SOURCES = \
 	audiorationalresample.c audiorationalresample.h \
 	audioratefaker.c audioratefaker.h \
 	videoratefaker.c videoratefaker.h \
+	faceprocessor.c faceprocessor.h \
 	face2rgb.c face2rgb.h
-libcardiacam_la_CFLAGS = $(AM_CFLAGS) $(gstreamer_CFLAGS)
-libcardiacam_la_LDFLAGS = $(AM_LDFLAGS) $(gstreamer_LIBS) $(CARDIACAM_PLUGIN_LDFLAGS) -lm
+libcardiacam_la_CFLAGS = $(AM_CFLAGS) $(gstreamer_CFLAGS) $(gstreamer_audio_CFLAGS) $(gstreamer_video_CFLAGS)
+libcardiacam_la_LDFLAGS = $(AM_LDFLAGS) $(gstreamer_LIBS) $(gstreamer_audio_LIBS) $(gstreamer_video_LIBS)  $(CARDIACAM_PLUGIN_LDFLAGS) -lm
 
 SUBDIRS = python

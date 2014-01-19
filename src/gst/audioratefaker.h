@@ -1,7 +1,7 @@
 /*
  * GstAudioRateFaker
  *
- * Copyright (C) 2013  Kipp Cannon
+ * Copyright (C) 2013,2014  Kipp Cannon
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
