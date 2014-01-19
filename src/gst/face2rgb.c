@@ -98,15 +98,29 @@ static void make_mask(GstFace2RGB *element)
 	gint area_forehead = 0, area_cheek = 0, area_bg = 0;
 	gint face_width = element->face_width > 0 ? element->face_width : element->width;
 	gint face_height = element->face_height > 0 ? element->face_height : element->height;
+	const gdouble x_scale = 2.0 / (face_width - 1);
+	const gdouble y_scale = 2.0 / (face_height - 1);
 
 	/*
 	 * mark background, forehead, and cheek areas in mask
+	 *
+	 * face_x, face_y are scaled so that the face is [-1, +1]
 	 */
 
 	for(y = 0; y < element->height; y++) {
-		gdouble y_squared = pow(2.0 * (y - element->face_y) / (face_height - 1) - 1, 2);
+		gdouble face_y = (y - element->face_y) * y_scale - 1.0;
+		gdouble face_y_squared = face_y * face_y;
+		/* short-cut this whole row if possible */
+		if(face_y_squared > 1.0) {
+			for(x = 0; x < element->width; x++, mask++) {
+				*mask = MASK_BG;
+				area_bg++;
+			}
+			continue;
+		}
 		for(x = 0; x < element->width; x++, mask++) {
-			if(pow(2.0 * (x - element->face_x) / (face_width - 1) - 1, 2) + y_squared > 1) {
+			gdouble face_x = (x - element->face_x) * x_scale - 1.0;
+			if(face_x * face_x + face_y_squared > 1.0) {
 				*mask = MASK_BG;
 				area_bg++;
 			} else if(y < element->nose_y) {
@@ -126,8 +140,8 @@ static void make_mask(GstFace2RGB *element)
 	 * non-face pixel count to face pixel count ratio
 	 */
 
-	element->bg_over_forehead_area_ratio = (double) area_bg / area_forehead;
-	element->bg_over_cheek_area_ratio = (double) area_bg / area_cheek;
+	element->bg_over_forehead_area_ratio = area_forehead ? (double) area_bg / area_forehead : 0;
+	element->bg_over_cheek_area_ratio = area_cheek ? (double) area_bg / area_cheek : 0;
 }
 
 
@@ -252,8 +266,8 @@ static GstFlowReturn transform(GstBaseTransform *trans, GstBuffer *inbuf, GstBuf
 	g_return_val_if_fail(mask != NULL, GST_FLOW_ERROR);
 
 	/*
-	 * apply gamma correction, and sum face and background RGB
-	 * components
+	 * apply gamma correction, and sum forehead, cheek, and background
+	 * RGB components
 	 */
 
 	gst_buffer_map(inbuf, &srcmap, GST_MAP_READ);
@@ -263,9 +277,14 @@ static GstFlowReturn transform(GstBaseTransform *trans, GstBuffer *inbuf, GstBuf
 		guchar *in = row;
 		gint col;
 		for(col = 0; col < element->width; col++) {
-			gdouble r = pow(*in++ / 255.0, gamma);
-			gdouble g = pow(*in++ / 255.0, gamma);
-			gdouble b = pow(*in++ / 255.0, gamma);
+			gdouble r = *in++ / 255.0;
+			gdouble g = *in++ / 255.0;
+			gdouble b = *in++ / 255.0;
+			if(gamma != 1.0) {
+				r = pow(r, gamma);
+				g = pow(g, gamma);
+				b = pow(b, gamma);
+			}
 			switch((enum mask_t) *mask++) {
 			case MASK_BG:
 				bg_r += r;
