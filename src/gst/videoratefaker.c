@@ -70,13 +70,24 @@ G_DEFINE_TYPE_WITH_CODE(GstVideoRateFaker, gst_video_rate_faker, GST_TYPE_BASE_T
 
 static GstCaps *transform_caps(GstBaseTransform *trans, GstPadDirection direction, GstCaps *caps, GstCaps *filter)
 {
-	GstCaps *othercaps = gst_caps_copy(caps);
+	GstCaps *othercaps;
 	guint i;
 
-	GST_DEBUG_OBJECT(trans, "transformed %" GST_PTR_FORMAT " with filter %" GST_PTR_FORMAT, caps, filter);
+	GST_DEBUG_OBJECT(trans, "transforming %" GST_PTR_FORMAT " on %s pad with filter %" GST_PTR_FORMAT, caps, direction == GST_PAD_SRC ? GST_BASE_TRANSFORM_SRC_NAME : GST_BASE_TRANSFORM_SINK_NAME, filter);
 
-	for(i = 0; i < gst_caps_get_size(othercaps); i++)
-		gst_structure_set(gst_caps_get_structure(othercaps, i), "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1, NULL);
+	/*
+	 * sink and source pads must have identical caps except for the
+	 * framerate which may differ by any amount.  we indicate our
+	 * preference for pass-through mode by prepending the supplied caps
+	 * verbatim to the result.
+	 */
+
+	othercaps = gst_caps_copy(caps);
+	caps = gst_caps_copy(caps);
+	for(i = 0; i < gst_caps_get_size(caps); i++)
+		gst_structure_set(gst_caps_get_structure(caps, i), "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1, NULL);
+	gst_caps_append(othercaps, caps);
+	gst_caps_unref(caps);
 
 	if(filter) {
 		caps = othercaps;
