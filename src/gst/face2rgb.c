@@ -104,7 +104,8 @@ static void make_mask(GstFace2RGB *element)
 	/*
 	 * mark background, forehead, and cheek areas in mask
 	 *
-	 * face_x, face_y are scaled so that the face is [-1, +1]
+	 * face_x, face_y are centred and scaled so that the face is the
+	 * unit circle
 	 */
 
 	for(y = 0; y < element->height; y++) {
@@ -275,11 +276,16 @@ static GstFlowReturn transform(GstBaseTransform *trans, GstBuffer *inbuf, GstBuf
 	last_row = row + element->height * element->stride;
 	for(; row < last_row; row += element->stride) {
 		guchar *in = row;
-		gint col;
-		for(col = 0; col < element->width; col++) {
-			gdouble r = *in++ / 255.0;
-			gdouble g = *in++ / 255.0;
-			gdouble b = *in++ / 255.0;
+		guchar *last_col = in + 3 * element->width;
+		for(; in < last_col;) {
+			/* we don't need to scale these into the range [0,
+			 * 1] because the factor of 255 will appear (raised
+			 * to the power gamma) in both the face and
+			 * background components, and therefore will cancel
+			 * itself out of the output */
+			gdouble r = *in++;
+			gdouble g = *in++;
+			gdouble b = *in++;
 			if(gamma != 1.0) {
 				r = pow(r, gamma);
 				g = pow(g, gamma);
