@@ -106,17 +106,15 @@ static void gst_face_processor_init(GstFaceProcessor *faceprocessor)
 {
 	GstBin *bin = GST_BIN(faceprocessor);
 	GstElement *element = GST_ELEMENT(faceprocessor);
-	GstElement *resample, *capsfilter, *whiten, *bandpass, *tsvenc, *sink;
+	GstElement *resample, *capsfilter, *bandpass, *tsvenc, *sink;
 
+	/* FIXME:  implement whitening filter.  also use for band pass? */
 	faceprocessor->face2rgb = gst_element_factory_make("face2rgb", "face2rgb"),
 	gst_object_ref(faceprocessor->face2rgb);	/* now two refs */
 	gst_bin_add_many(bin,
 		faceprocessor->face2rgb,	/* consume one ref */
 		resample = gst_element_factory_make("audiorationalresample", "audiorationalresample"),
 		capsfilter = gst_element_factory_make("capsfilter", "capsfilter"),
-/*	FIXME:  implement whitening filter.  also use for band pass?
-		whiten = gst_element_factory_make("audiofirfilter", "audiofirfilter"),
-*/
 		bandpass = gst_element_factory_make("audiochebband", "audiochebband"),
 		tsvenc = gst_element_factory_make("tsvenc", "tsvenc"),
 		sink = gst_element_factory_make("fdsink", "sink"),
@@ -127,7 +125,7 @@ static void gst_face_processor_init(GstFaceProcessor *faceprocessor)
 
 	/* FIXME;  auto-adjust output rate to something suitable for video
 	 * frame rate */
-	g_object_set(G_OBJECT(capsfilter), "caps", gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, 40, NULL), NULL);
+	g_object_set(G_OBJECT(capsfilter), "caps", gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, 100, NULL), NULL);
 	g_object_set(G_OBJECT(bandpass), "lower-frequency", 0.5, "upper-frequency", 5.0, "poles", 4, NULL);
 	g_object_set(G_OBJECT(sink), "fd", 1, "sync", FALSE, "async", FALSE, NULL);
 
