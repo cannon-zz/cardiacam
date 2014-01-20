@@ -226,10 +226,11 @@ class Handler(object):
 			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::face-y", face["y"])
 			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::face-width", face["width"])
 			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::face-height", face["height"])
-			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::nose-x", face["nose->x"])
-			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::nose-y", face["nose->y"])
-			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::nose-width", face["nose->width"])
-			Gst.ChildProxy.set_property(faceprocessor, "face2rgb::nose-height", face["nose->height"])
+			if "nose->x" in face:
+				Gst.ChildProxy.set_property(faceprocessor, "face2rgb::nose-x", face["nose->x"])
+				Gst.ChildProxy.set_property(faceprocessor, "face2rgb::nose-y", face["nose->y"])
+				Gst.ChildProxy.set_property(faceprocessor, "face2rgb::nose-width", face["nose->width"])
+				Gst.ChildProxy.set_property(faceprocessor, "face2rgb::nose-height", face["nose->height"])
 		#write_dump_dot(self.pipeline, "blah", verbose = True)
 
 
