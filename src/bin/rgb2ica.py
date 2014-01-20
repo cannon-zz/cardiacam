@@ -1,6 +1,11 @@
-import bisect
+import itertools
+import logging
 import numpy
+import sys
 from cardiacam import ica
+
+logging.basicConfig(level = logging.INFO)
+
 
 # rgb
 wguess = numpy.array(
@@ -11,45 +16,49 @@ wguess = numpy.array(
 # default
 #wguess = None
 
+transient = 7.0	# seconds
 
-def load_rgb(filename):
-	rgb = numpy.loadtxt(filename)
+
+def load_rgb(fileobj):
+	rgb = numpy.loadtxt(fileobj)
 	t = rgb[:,0]
 	rgb = rgb[:,1:]
-	return rgb, t
+	logging.info("loaded %d samples spanning [%g s, %g s)" % (len(t), t[0], t[-1]))
+	deltas = t[1:] - t[:-1]
+	if deltas.ptp() > 1e-8:
+		gapindex = deltas.argmax()
+		logging.warn("sample rate is not uniform, suspect %g s gap in data at %.16g s" % (deltas[gapindex] - deltas.mean(), t[gapindex]))
+	return t, rgb
 
 
 def differentiate(rgb, t):
 	rgb = (rgb[2:] - rgb[:-2]).T / (t[2:] - t[:-2])
 	return rgb.T, t[1:-1]
 
-if True:
-	# load rgb1.txt
-	rgb, t = load_rgb("rgb1.txt")
 
-	# replace RGB time series with its 1st derivative to whiten the
-	# background noise spectrum
-	rgb, t = differentiate(rgb, t)
+# load rgb.txt
+t, rgb = load_rgb(sys.stdin)
+# for some reason need to skip a couple of samples before doing
+# this
+rate = int(round(1. / (t[3] - t[2])))
+logging.info("sample rate seems to be %d Hz" % rate)
 
-	k, w, s = ica.fastica(rgb, fun = "exp", n_comp = 3, w_init = wguess, maxit = 40000, tol = 1e-14)
-	print w
+# clip start and stop transients
+transient = int(round(transient * rate))
+rgb = rgb[transient:-transient]
+t = t[transient:-transient]
 
-	output = open("ica1.txt", "w")
-	for t, x in zip(t, s[:]):
-		print >>output, ("%.16g " * 4) % ((t,) + tuple(x))
+# replace RGB time series with its 1st derivative to whiten the
+# background noise spectrum
+rgb, t = differentiate(rgb, t)
 
+# relationship is:  s = numpy.dot(rgb, w)  ?
+forehead_k, forehead_w, forehead_s = ica.fastica(rgb[:,:3], fun = "exp", n_comp = 3, w_init = None, maxit = 40000, tol = 1e-14)
+cheek_k, cheek_w, cheek_s = ica.fastica(rgb[:,3:], fun = "exp", n_comp = 3, w_init = forehead_w, maxit = 40000, tol = 1e-14)
+logging.info("forehead w = %s" % str(forehead_w))
+logging.info("cheek w = %s" % str(cheek_w))
 
-if True:
-	# load rgb2.txt
-	rgb, t = load_rgb("rgb2.txt")
-
-	# replace RGB time series with its 1st derivative to whiten the
-	# background noise spectrum
-	rgb, t = differentiate(rgb, t)
-
-	k, w, s = ica.fastica(rgb, fun = "exp", n_comp = 3, w_init = wguess, maxit = 40000, tol = 1e-14)
-	print w
-
-	output = open("ica2.txt", "w")
-	for t, x in zip(t, s[:]):
-		print >>output, ("%.16g " * 4) % ((t,) + tuple(x))
+output = sys.stdout
+fmt = "%.16g" + " %.16g" * (forehead_s.shape[1] + cheek_s.shape[1])
+for t, forehead_x, cheek_x in itertools.izip(t, forehead_s[:], cheek_s[:]):
+	print >>output, fmt % ((t,) + tuple(forehead_x) + tuple(cheek_x))
