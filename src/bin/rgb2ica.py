@@ -16,7 +16,7 @@ wguess = numpy.array(
 # default
 #wguess = None
 
-transient = 7.0	# seconds
+transient = (7.0, 1.0)	# start, stop in seconds
 
 
 def load_rgb(fileobj):
@@ -44,9 +44,10 @@ rate = int(round(1. / (t[3] - t[2])))
 logging.info("sample rate seems to be %d Hz" % rate)
 
 # clip start and stop transients
-transient = int(round(transient * rate))
-rgb = rgb[transient:-transient]
-t = t[transient:-transient]
+transient = int(round(transient[0] * rate)), int(round(transient[1] * rate))
+rgb = rgb[transient[0]:-transient[1]]
+t = t[transient[0]:-transient[-1]]
+logging.info("after transient removal, have %d samples spanning [%g s, %g s)" % (len(t), t[0], t[-1]))
 
 # replace RGB time series with its 1st derivative to whiten the
 # background noise spectrum
