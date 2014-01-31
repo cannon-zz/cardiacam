@@ -62,6 +62,43 @@ G_DEFINE_TYPE_WITH_CODE(GstVideoRateFaker, gst_video_rate_faker, GST_TYPE_BASE_T
 /*
  * ============================================================================
  *
+ *                             Internal Functions
+ *
+ * ============================================================================
+ */
+
+
+static gboolean do_new_segment(GstVideoRateFaker *element)
+{
+	gboolean success = TRUE;
+
+	if(element->last_segment) {
+		GstSegment segment;
+
+		gst_event_copy_segment(element->last_segment, &segment);
+
+		if(segment.format == GST_FORMAT_TIME) {
+			if(GST_CLOCK_TIME_IS_VALID(segment.start))
+				segment.start = gst_util_uint64_scale_int_round(segment.start, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
+			if(GST_CLOCK_TIME_IS_VALID(segment.stop))
+				segment.stop = gst_util_uint64_scale_int_round(segment.stop, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
+			if(GST_CLOCK_TIME_IS_VALID(segment.position))
+				segment.position = gst_util_uint64_scale_int_round(segment.position, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
+			gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(element), gst_event_new_segment(&segment));
+			gst_event_unref(element->last_segment);
+		} else
+			gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(element), element->last_segment);
+
+		element->need_new_segment = FALSE;
+	}
+
+	return success;
+}
+
+
+/*
+ * ============================================================================
+ *
  *                          GstBaseTransform Methods
  *
  * ============================================================================
@@ -101,6 +138,28 @@ static GstCaps *transform_caps(GstBaseTransform *trans, GstPadDirection directio
 }
 
 
+static GstCaps *fixate_caps(GstBaseTransform *trans, GstPadDirection direction, GstCaps *caps, GstCaps *othercaps)
+{
+	GstStructure *s;
+	gint rate_num, rate_den = 1;
+
+	GST_DEBUG_OBJECT(trans, "fixating %s caps %" GST_PTR_FORMAT " (other pad is %" GST_PTR_FORMAT ")", direction == GST_PAD_SRC ? GST_BASE_TRANSFORM_SRC_NAME : GST_BASE_TRANSFORM_SINK_NAME, othercaps, caps);
+
+	s = gst_caps_get_structure(caps, 0);
+	if(!gst_structure_get_fraction(s, "framerate", &rate_num, &rate_den)) {
+		GST_ERROR_OBJECT(trans, "could not deduce framerate from %" GST_PTR_FORMAT, caps);
+		goto done;
+	}
+
+	othercaps = gst_caps_truncate(othercaps);       /* does this leak memory? */
+	s = gst_caps_get_structure(othercaps, 0);
+	gst_structure_fixate_field_nearest_fraction(s, "framerate", rate_num, rate_den);
+
+done:
+	return othercaps;
+}
+
+
 static gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outcaps)
 {
 	GstVideoRateFaker *element = GST_VIDEO_RATE_FAKER(trans);
@@ -114,7 +173,9 @@ static gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outc
 	if(success) {
 		gst_util_fraction_multiply(inrate_num, inrate_den, outrate_den, outrate_num, &element->inrate_over_outrate_num, &element->inrate_over_outrate_den);
 		GST_DEBUG_OBJECT(element, "in rate / out rate = %d/%d", element->inrate_over_outrate_num, element->inrate_over_outrate_den);
-	}
+		do_new_segment(element);
+	} else
+		GST_ERROR_OBJECT(element, "failed to parse rates from incaps = %" GST_PTR_FORMAT ", outcaps = %" GST_PTR_FORMAT, incaps, outcaps);
 
 	return success;
 }
@@ -130,6 +191,7 @@ static gboolean sink_event(GstBaseTransform *trans, GstEvent *event)
 		if(element->last_segment)
 			gst_event_unref(element->last_segment);
 		element->last_segment = event;
+		element->need_new_segment = TRUE;
 		break;
 
 	default:
@@ -146,22 +208,8 @@ static GstFlowReturn transform_ip(GstBaseTransform *trans, GstBuffer *buf)
 	GstVideoRateFaker *element = GST_VIDEO_RATE_FAKER(trans);
 	GstFlowReturn result = GST_FLOW_OK;
 
-	if(element->last_segment) {
-		GstSegment segment;
-		gst_event_copy_segment(element->last_segment, &segment);
-		if(segment.format == GST_FORMAT_TIME) {
-			if(GST_CLOCK_TIME_IS_VALID(segment.start))
-				segment.start = gst_util_uint64_scale_int_round(segment.start, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
-			if(GST_CLOCK_TIME_IS_VALID(segment.stop))
-				segment.stop = gst_util_uint64_scale_int_round(segment.stop, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
-			if(GST_CLOCK_TIME_IS_VALID(segment.position))
-				segment.position = gst_util_uint64_scale_int_round(segment.position, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
-			gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(trans), gst_event_new_segment(&segment));
-			gst_event_unref(element->last_segment);
-		} else
-			gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(trans), element->last_segment);
-		element->last_segment = NULL;
-	}
+	if(element->need_new_segment)
+		do_new_segment(element);
 
 	if(GST_BUFFER_PTS_IS_VALID(buf) && GST_BUFFER_DURATION_IS_VALID(buf)) {
 		GstClockTime timestamp = GST_BUFFER_PTS(buf);
@@ -234,6 +282,7 @@ static void gst_video_rate_faker_class_init(GstVideoRateFakerClass *klass)
 	object_class->finalize = GST_DEBUG_FUNCPTR(finalize);
 
 	transform_class->transform_caps = GST_DEBUG_FUNCPTR(transform_caps);
+	transform_class->fixate_caps = GST_DEBUG_FUNCPTR(fixate_caps);
 	transform_class->set_caps = GST_DEBUG_FUNCPTR(set_caps);
 	transform_class->sink_event = GST_DEBUG_FUNCPTR(sink_event);
 	transform_class->transform_ip = GST_DEBUG_FUNCPTR(transform_ip);
@@ -254,4 +303,9 @@ static void gst_video_rate_faker_class_init(GstVideoRateFakerClass *klass)
 static void gst_video_rate_faker_init(GstVideoRateFaker *element)
 {
 	gst_base_transform_set_gap_aware(GST_BASE_TRANSFORM(element), TRUE);
+
+	element->need_new_segment = FALSE;
+	element->last_segment = NULL;
+	element->inrate_over_outrate_num = -1;
+	element->inrate_over_outrate_den = -1;
 }
