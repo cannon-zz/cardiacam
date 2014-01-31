@@ -53,13 +53,56 @@ logging.info("after transient removal, have %d samples spanning [%g s, %g s)" % 
 # background noise spectrum
 rgb, t = differentiate(rgb, t)
 
-# relationship is:  s = numpy.dot(rgb, w)  ?
-forehead_k, forehead_w, forehead_s = ica.fastica(rgb[:,:3], fun = "exp", n_comp = 3, w_init = None, maxit = 40000, tol = 1e-14)
-cheek_k, cheek_w, cheek_s = ica.fastica(rgb[:,3:], fun = "exp", n_comp = 3, w_init = forehead_w, maxit = 40000, tol = 1e-14)
-logging.info("forehead w = %s" % str(forehead_w))
-logging.info("cheek w = %s" % str(cheek_w))
 
 output = sys.stdout
+def unmix_rgb(rgb, n_comp = 3):
+	# relationship between the RGB streams, the unmixed streams, and
+	# the two other matrices returned by this function is:
+	#
+	#	s = numpy.dot(rgb - rgb.mean(0), numpy.asmatrix(k) * w)
+	#
+	# where rgb and s are both (samples x 3) matrices and k and w are
+	# 3x3 matrices
+	k, w, s = ica.fastica(rgb, fun = "exp", n_comp = n_comp, w_init = None, maxit = 40000, tol = 1e-14)
+	unmix = numpy.asarray(numpy.asmatrix(k) * w)
+
+	# move greenest component to position 0, keeping all matrices
+	# consistent
+	i = abs(unmix)[1].argmax()
+	s = numpy.roll(s, -i, 1)
+	w = numpy.roll(w, -i, 1)
+	unmix = numpy.roll(unmix, -i, 1)
+
+	# of the other two, move bluest component to position 1, keeping
+	# all matrices consistent
+	i = abs(unmix)[2][1:].argmax()
+	s[:,1:] = numpy.roll(s[:,1:], -i, 1)
+	w[:,1:] = numpy.roll(w[:,1:], -i, 1)
+	unmix[:,1:] = numpy.roll(unmix[:,1:], -i, 1)
+
+	# make the green coefficient of the greenest component negative,
+	# keeping all matrices consistent
+	if unmix[1,0] > 0:
+		s[:,0] *= -1.0
+		w[:,0] *= -1.0
+		unmix[:,0] *= -1.0
+
+	# make the blue coefficient of the bluest component positive,
+	# keeping all matrices consistent
+	if unmix[2,1] < 0:
+		s[:,1] *= -1.0
+		w[:,1] *= -1.0
+		unmix[:,1] *= -1.0
+
+	logging.info("unmix = %s" % str(unmix))
+
+	return s
+
+logging.info("forehead ...")
+forehead_s = unmix(rgb[:,:3])
+logging.info("cheek ...")
+cheek_s = unmix(rgb[:,3:])
+
 fmt = "%.16g" + " %.16g" * (forehead_s.shape[1] + cheek_s.shape[1])
 for t, forehead_x, cheek_x in itertools.izip(t, forehead_s[:], cheek_s[:]):
 	print >>output, fmt % ((t,) + tuple(forehead_x) + tuple(cheek_x))
