@@ -65,6 +65,43 @@ G_DEFINE_TYPE_WITH_CODE(GstAudioRateFaker, gst_audio_rate_faker, GST_TYPE_BASE_T
 /*
  * ============================================================================
  *
+ *                             Internal Functions
+ *
+ * ============================================================================
+ */
+
+
+static gboolean do_new_segment(GstAudioRateFaker *element)
+{
+	gboolean success = TRUE;
+
+	if(element->last_segment) {
+		GstSegment segment;
+
+		gst_event_copy_segment(element->last_segment, &segment);
+
+		if(segment.format == GST_FORMAT_TIME) {
+			if(GST_CLOCK_TIME_IS_VALID(segment.start))
+				segment.start = gst_util_uint64_scale_int_round(segment.start, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
+			if(GST_CLOCK_TIME_IS_VALID(segment.stop))
+				segment.stop = gst_util_uint64_scale_int_round(segment.stop, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
+			if(GST_CLOCK_TIME_IS_VALID(segment.position))
+				segment.position = gst_util_uint64_scale_int_round(segment.position, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
+			success = gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(element), gst_event_new_segment(&segment));
+			gst_event_unref(element->last_segment);
+		} else
+			success = gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(element), element->last_segment);
+
+		element->need_new_segment = FALSE;
+	}
+
+	return success;
+}
+
+
+/*
+ * ============================================================================
+ *
  *                          GstBaseTransform Methods
  *
  * ============================================================================
@@ -171,6 +208,7 @@ static gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outc
 	if(success) {
 		gst_util_fraction_multiply(inrate_num, inrate_den, outrate_den, outrate_num, &element->inrate_over_outrate_num, &element->inrate_over_outrate_den);
 		GST_DEBUG_OBJECT(element, "in rate / out rate = %d/%d", element->inrate_over_outrate_num, element->inrate_over_outrate_den);
+		do_new_segment(element);
 	} else
 		GST_ERROR_OBJECT(element, "failed to parse rates from incaps = %" GST_PTR_FORMAT ", outcaps = %" GST_PTR_FORMAT, incaps, outcaps);
 
@@ -188,6 +226,7 @@ static gboolean sink_event(GstBaseTransform *trans, GstEvent *event)
 		if(element->last_segment)
 			gst_event_unref(element->last_segment);
 		element->last_segment = event;
+		element->need_new_segment = TRUE;
 		break;
 
 	default:
@@ -204,22 +243,8 @@ static GstFlowReturn transform_ip(GstBaseTransform *trans, GstBuffer *buf)
 	GstAudioRateFaker *element = GST_AUDIO_RATE_FAKER(trans);
 	GstFlowReturn result = GST_FLOW_OK;
 
-	if(element->last_segment) {
-		GstSegment segment;
-		gst_event_copy_segment(element->last_segment, &segment);
-		if(segment.format == GST_FORMAT_TIME) {
-			if(GST_CLOCK_TIME_IS_VALID(segment.start))
-				segment.start = gst_util_uint64_scale_int_round(segment.start, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
-			if(GST_CLOCK_TIME_IS_VALID(segment.stop))
-				segment.stop = gst_util_uint64_scale_int_round(segment.stop, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
-			if(GST_CLOCK_TIME_IS_VALID(segment.position))
-				segment.position = gst_util_uint64_scale_int_round(segment.position, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
-			gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(trans), gst_event_new_segment(&segment));
-			gst_event_unref(element->last_segment);
-		} else
-			gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(trans), element->last_segment);
-		element->last_segment = NULL;
-	}
+	if(element->need_new_segment)
+		do_new_segment(element);
 
 	if(GST_BUFFER_PTS_IS_VALID(buf) && GST_BUFFER_DURATION_IS_VALID(buf)) {
 		GstClockTime timestamp = GST_BUFFER_PTS(buf);
@@ -331,4 +356,9 @@ static void gst_audio_rate_faker_class_init(GstAudioRateFakerClass *klass)
 static void gst_audio_rate_faker_init(GstAudioRateFaker *element)
 {
 	gst_base_transform_set_gap_aware(GST_BASE_TRANSFORM(element), TRUE);
+
+	element->last_segment = NULL;
+	element->need_new_segment = FALSE;
+	element->inrate_over_outrate_num = -1;
+	element->inrate_over_outrate_den = -1;
 }

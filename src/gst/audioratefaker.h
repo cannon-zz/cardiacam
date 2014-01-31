@@ -81,6 +81,7 @@ struct _GstAudioRateFaker {
 	GstBaseTransform basetransform;
 
 	GstEvent *last_segment;
+	gboolean need_new_segment;
 
 	gint inrate_over_outrate_num;
 	gint inrate_over_outrate_den;
