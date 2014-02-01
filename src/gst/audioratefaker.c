@@ -88,9 +88,10 @@ static gboolean do_new_segment(GstAudioRateFaker *element)
 			if(GST_CLOCK_TIME_IS_VALID(segment.position))
 				segment.position = gst_util_uint64_scale_int_round(segment.position, element->inrate_over_outrate_num, element->inrate_over_outrate_den);
 			success = gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(element), gst_event_new_segment(&segment));
-			gst_event_unref(element->last_segment);
-		} else
+		} else {
+			gst_event_ref(element->last_segment);
 			success = gst_pad_push_event(GST_BASE_TRANSFORM_SRC_PAD(element), element->last_segment);
+		}
 
 		element->need_new_segment = FALSE;
 	}
