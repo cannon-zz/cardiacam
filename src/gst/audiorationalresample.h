@@ -49,7 +49,7 @@ G_BEGIN_DECLS
 
 
 #define GST_TYPE_AUDIO_RATIONALRESAMPLE \
-	(gst_audio_rationalresample_get_type())
+	(gst_audiorationalresample_get_type())
 #define GST_AUDIO_RATIONALRESAMPLE(obj) \
 	(G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_AUDIO_RATIONALRESAMPLE, GstAudioRationalResample))
 #define GST_AUDIO_RATIONALRESAMPLE_CLASS(klass) \
@@ -95,7 +95,7 @@ struct _GstAudioRationalResample {
  */
 
 
-GType gst_audio_rationalresample_get_type(void);
+GType gst_audiorationalresample_get_type(void);
 
 
 G_END_DECLS
