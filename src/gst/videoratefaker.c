@@ -125,7 +125,6 @@ static GstCaps *transform_caps(GstBaseTransform *trans, GstPadDirection directio
 	for(i = 0; i < gst_caps_get_size(caps); i++)
 		gst_structure_set(gst_caps_get_structure(caps, i), "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1, NULL);
 	gst_caps_append(othercaps, caps);
-	gst_caps_unref(caps);
 
 	if(filter) {
 		caps = othercaps;
@@ -135,28 +134,6 @@ static GstCaps *transform_caps(GstBaseTransform *trans, GstPadDirection directio
 
 	GST_DEBUG_OBJECT(trans, "to %" GST_PTR_FORMAT, othercaps);
 
-	return othercaps;
-}
-
-
-static GstCaps *fixate_caps(GstBaseTransform *trans, GstPadDirection direction, GstCaps *caps, GstCaps *othercaps)
-{
-	GstStructure *s;
-	gint rate_num, rate_den = 1;
-
-	GST_DEBUG_OBJECT(trans, "fixating %s caps %" GST_PTR_FORMAT " (other pad is %" GST_PTR_FORMAT ")", direction == GST_PAD_SRC ? GST_BASE_TRANSFORM_SRC_NAME : GST_BASE_TRANSFORM_SINK_NAME, othercaps, caps);
-
-	s = gst_caps_get_structure(caps, 0);
-	if(!gst_structure_get_fraction(s, "framerate", &rate_num, &rate_den)) {
-		GST_ERROR_OBJECT(trans, "could not deduce framerate from %" GST_PTR_FORMAT, caps);
-		goto done;
-	}
-
-	othercaps = gst_caps_truncate(othercaps);       /* does this leak memory? */
-	s = gst_caps_get_structure(othercaps, 0);
-	gst_structure_fixate_field_nearest_fraction(s, "framerate", rate_num, rate_den);
-
-done:
 	return othercaps;
 }
 
@@ -283,7 +260,6 @@ static void gst_video_rate_faker_class_init(GstVideoRateFakerClass *klass)
 	object_class->finalize = GST_DEBUG_FUNCPTR(finalize);
 
 	transform_class->transform_caps = GST_DEBUG_FUNCPTR(transform_caps);
-	transform_class->fixate_caps = GST_DEBUG_FUNCPTR(fixate_caps);
 	transform_class->set_caps = GST_DEBUG_FUNCPTR(set_caps);
 	transform_class->sink_event = GST_DEBUG_FUNCPTR(sink_event);
 	transform_class->transform_ip = GST_DEBUG_FUNCPTR(transform_ip);
