@@ -194,6 +194,13 @@ class Handler(object):
 		faces = [dict((name, int(value)) for name, value in self.faceparser.findall(face)) for face in self.facesparser.findall(s.to_string().replace("\\", ""))]
 
 		#
+		# disallow more than one face
+		#
+
+		if len(faces) > 1:
+			return
+
+		#
 		# do we need to add face processors?
 		#
 
