@@ -263,6 +263,13 @@ else:
 handler.video_src = src = mkelem(pipeline, mkelem(pipeline, src, "capsfilter", caps = Gst.Caps.from_string("video/x-raw, format=(string)RGB")), "tee")
 
 #
+# limit frame rate into face detector to 5 frames per second (don't need to
+# recompute face mask faster than this)
+#
+
+src = mkelem(pipeline, mkelem(pipeline, src, "videorate", drop_only = True), "capsfilter", caps = Gst.Caps.from_string("video/x-raw, framerate=5/1"))
+
+#
 # adjust brightness and contrast before face detection if requested
 #
 
