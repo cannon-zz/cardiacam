@@ -125,7 +125,7 @@ static void gst_face_processor_init(GstFaceProcessor *faceprocessor)
 
 	/* FIXME;  auto-adjust output rate to something suitable for video
 	 * frame rate */
-	g_object_set(G_OBJECT(capsfilter), "caps", gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, 100, NULL), NULL);
+	g_object_set(G_OBJECT(capsfilter), "caps", gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, 500, NULL), NULL);
 	g_object_set(G_OBJECT(bandpass), "lower-frequency", 0.5, "upper-frequency", 5.0, "poles", 4, NULL);
 	g_object_set(G_OBJECT(sink), "fd", 1, "sync", FALSE, "async", FALSE, NULL);
 
