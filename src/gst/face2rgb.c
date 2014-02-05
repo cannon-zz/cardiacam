@@ -50,6 +50,10 @@
 #define DEFAULT_NOSE_Y 0
 #define DEFAULT_NOSE_WIDTH 0
 #define DEFAULT_NOSE_HEIGHT 0
+#define DEFAULT_EYES_X 0
+#define DEFAULT_EYES_Y 0
+#define DEFAULT_EYES_WIDTH 0
+#define DEFAULT_EYES_HEIGHT 0
 
 
 enum mask_t {
@@ -93,13 +97,13 @@ G_DEFINE_TYPE_WITH_CODE(GstFace2RGB, gst_face_2_rgb, GST_TYPE_BASE_TRANSFORM, ad
 
 static void make_mask(GstFace2RGB *element)
 {
-	gint *mask = element->mask = g_realloc_n(element->mask, element->height * element->width, sizeof(*element->mask));
+	gint *mask = element->mask;
 	gint x, y;
 	gint area_forehead = 0, area_cheek = 0, area_bg = 0;
 	gint face_width = element->face_width > 0 ? element->face_width : element->width;
 	gint face_height = element->face_height > 0 ? element->face_height : element->height;
-	const gdouble x_scale = 2.0 / (face_width - 1);
-	const gdouble y_scale = 2.0 / (face_height - 1);
+	const gdouble x_scale = 2.0 / face_width;
+	const gdouble y_scale = 2.0 / face_height;
 
 	/*
 	 * mark background, forehead, and cheek areas in mask
@@ -124,10 +128,10 @@ static void make_mask(GstFace2RGB *element)
 			if(face_x * face_x + face_y_squared > 1.0) {
 				*mask = MASK_BG;
 				area_bg++;
-			} else if(y < element->nose_y) {
+			} else if(y < element->eyes_y) {
 				*mask = MASK_FOREHEAD;
 				area_forehead++;
-			} else if(x < element->nose_x || x > element->nose_x + element->nose_width) {
+			} else if(y >= element->eyes_y + element->eyes_height && (x < element->nose_x || x >= element->nose_x + element->nose_width)) {
 				*mask = MASK_CHEEK;
 				area_cheek++;
 			} else {
@@ -141,6 +145,7 @@ static void make_mask(GstFace2RGB *element)
 	 * non-face pixel count to face pixel count ratio
 	 */
 
+	GST_DEBUG_OBJECT(element, "forehead is %d pixels, cheeks are %d pixels", area_forehead, area_cheek);
 	element->bg_over_forehead_area_ratio = area_forehead ? (double) area_bg / area_forehead : 0;
 	element->bg_over_cheek_area_ratio = area_cheek ? (double) area_bg / area_cheek : 0;
 }
@@ -228,6 +233,7 @@ static gboolean set_caps(GstBaseTransform *trans, GstCaps *incaps, GstCaps *outc
 		element->width = GST_VIDEO_INFO_WIDTH(&info);
 		element->height = GST_VIDEO_INFO_HEIGHT(&info);
 		element->stride = GST_VIDEO_INFO_PLANE_STRIDE(&info, 0);
+		element->mask = g_realloc_n(element->mask, element->height * element->width, sizeof(*element->mask));
 		element->need_new_mask = TRUE;
 	} else
 		GST_ERROR_OBJECT(element, "could not parse caps");
@@ -372,6 +378,10 @@ enum property {
 	ARG_NOSE_Y,
 	ARG_NOSE_WIDTH,
 	ARG_NOSE_HEIGHT,
+	ARG_EYES_X,
+	ARG_EYES_Y,
+	ARG_EYES_WIDTH,
+	ARG_EYES_HEIGHT,
 };
 
 
@@ -426,6 +436,26 @@ static void set_property(GObject *object, enum property prop_id, const GValue *v
 		element->need_new_mask = TRUE;
 		break;
 
+	case ARG_EYES_X:
+		element->eyes_x = g_value_get_int(value);
+		element->need_new_mask = TRUE;
+		break;
+
+	case ARG_EYES_Y:
+		element->eyes_y = g_value_get_int(value);
+		element->need_new_mask = TRUE;
+		break;
+
+	case ARG_EYES_WIDTH:
+		element->eyes_width = g_value_get_int(value);
+		element->need_new_mask = TRUE;
+		break;
+
+	case ARG_EYES_HEIGHT:
+		element->eyes_height = g_value_get_int(value);
+		element->need_new_mask = TRUE;
+		break;
+
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
 		break;
@@ -476,6 +506,22 @@ static void get_property(GObject *object, enum property prop_id, GValue *value, 
 
 	case ARG_NOSE_HEIGHT:
 		g_value_set_int(value, element->nose_height);
+		break;
+
+	case ARG_EYES_X:
+		g_value_set_int(value, element->eyes_x);
+		break;
+
+	case ARG_EYES_Y:
+		g_value_set_int(value, element->eyes_y);
+		break;
+
+	case ARG_EYES_WIDTH:
+		g_value_set_int(value, element->eyes_width);
+		break;
+
+	case ARG_EYES_HEIGHT:
+		g_value_set_int(value, element->eyes_height);
 		break;
 
 	default:
@@ -658,6 +704,54 @@ static void gst_face_2_rgb_class_init(GstFace2RGBClass *klass)
 			"nose height",
 			"Height of nose (0 = use height of video).",
 			G_MININT, G_MAXINT, DEFAULT_NOSE_HEIGHT,
+			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
+		)
+	);
+
+	g_object_class_install_property(
+		gobject_class,
+		ARG_EYES_X,
+		g_param_spec_int(
+			"eyes-x",
+			"eyes X",
+			"Left edge of eyes.",
+			G_MININT, G_MAXINT, DEFAULT_EYES_X,
+			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
+		)
+	);
+
+	g_object_class_install_property(
+		gobject_class,
+		ARG_EYES_Y,
+		g_param_spec_int(
+			"eyes-y",
+			"eyes y",
+			"Top edge of eyes.",
+			G_MININT, G_MAXINT, DEFAULT_EYES_Y,
+			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
+		)
+	);
+
+	g_object_class_install_property(
+		gobject_class,
+		ARG_EYES_WIDTH,
+		g_param_spec_int(
+			"eyes-width",
+			"eyes width",
+			"Width of eyes (0 = use width of video).",
+			G_MININT, G_MAXINT, DEFAULT_EYES_WIDTH,
+			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
+		)
+	);
+
+	g_object_class_install_property(
+		gobject_class,
+		ARG_EYES_HEIGHT,
+		g_param_spec_int(
+			"eyes-height",
+			"eyes height",
+			"Height of eyes (0 = use height of video).",
+			G_MININT, G_MAXINT, DEFAULT_EYES_HEIGHT,
 			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
 		)
 	);

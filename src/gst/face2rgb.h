@@ -85,6 +85,8 @@ struct _GstFace2RGB {
 	gint face_width, face_height;	/* pixels */
 	gint nose_x, nose_y;	/* pixels */
 	gint nose_width, nose_height;	/* pixels */
+	gint eyes_x, eyes_y;	/* pixels */
+	gint eyes_width, eyes_height;	/* pixels */
 	gboolean need_new_mask;
 
 	gint width, height;	/* pixels */
