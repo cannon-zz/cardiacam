@@ -1,3 +1,4 @@
+import bisect
 import itertools
 import logging
 import numpy
@@ -38,15 +39,12 @@ def differentiate(rgb, t):
 
 # load rgb.txt
 t, rgb = load_rgb(sys.stdin)
-# for some reason need to skip a couple of samples before doing
-# this
-rate = int(round(1. / (t[3] - t[2])))
-logging.info("sample rate seems to be %d Hz" % rate)
+logging.info("mean sample rate is %g Hz" % (len(t) / (t[-1] - t[0])))
 
 # clip start and stop transients
-transient = int(round(transient[0] * rate)), int(round(transient[1] * rate))
-rgb = rgb[transient[0]:-transient[1]]
-t = t[transient[0]:-transient[-1]]
+transient = bisect.bisect(t, t[0] + transient[0]), bisect.bisect(t, t[-1] - transient[1])
+rgb = rgb[transient[0]:transient[1]]
+t = t[transient[0]:transient[-1]]
 logging.info("after transient removal, have %d samples spanning [%g s, %g s)" % (len(t), t[0], t[-1]))
 
 # replace RGB time series with its 1st derivative to whiten the
