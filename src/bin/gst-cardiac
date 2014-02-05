@@ -272,7 +272,12 @@ handler.video_src = src = mkelem(pipeline, mkelem(pipeline, src, "capsfilter", c
 # recompute face mask faster than this)
 #
 
-src = mkelem(pipeline, mkelem(pipeline, src, "videorate", drop_only = True), "capsfilter", caps = Gst.Caps.from_string("video/x-raw, framerate=5/1"))
+# FIXME:  while this does significantly reduce the computational cost of
+# the pipeline, it introduces discontinuities in the RGB time series that
+# confuse the ICA analysis.  probably something to do with the
+# band-limiting filter.  investigate a way to mitigate the problem
+
+#src = mkelem(pipeline, mkelem(pipeline, src, "videorate", drop_only = True), "capsfilter", caps = Gst.Caps.from_string("video/x-raw, framerate=5/1"))
 
 #
 # adjust brightness and contrast before face detection if requested
