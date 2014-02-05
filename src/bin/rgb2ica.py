@@ -94,13 +94,21 @@ def unmix_rgb(rgb, n_comp = 3):
 
 	logging.info("unmix = %s" % str(unmix))
 
-	return s
+	# make sure we've not screwed up the matrices
+	assert abs(unmix - numpy.asarray(numpy.asmatrix(k) * w)).max() < 1e-14
+	assert abs(s - numpy.dot(rgb - rgb.mean(0), unmix)).max() < 1e-14
 
-logging.info("forehead ...")
-forehead_s = unmix(rgb[:,:3])
-logging.info("cheek ...")
-cheek_s = unmix(rgb[:,3:])
+	return unmix, s
 
+# add the forehead and cheek streams together to increase the SNR for
+# finding the unmix transform
+unmix, s = unmix_rgb(rgb[:,:3] + rgb[:,3:])
+
+# now unmix the foreehad and cheek streams
+forehead_s = numpy.dot(rgb[:,:3] - rgb[:,:3].mean(0), unmix)
+cheek_s = numpy.dot(rgb[:,3:] - rgb[:,3:].mean(0), unmix)
+
+# write output
 fmt = "%.16g" + " %.16g" * (forehead_s.shape[1] + cheek_s.shape[1])
 for t, forehead_x, cheek_x in itertools.izip(t, forehead_s[:], cheek_s[:]):
 	print >>output, fmt % ((t,) + tuple(forehead_x) + tuple(cheek_x))
