@@ -17,7 +17,7 @@ wguess = numpy.array(
 # default
 #wguess = None
 
-transient = (7.0, 1.0)	# start, stop in seconds
+transient = (7.0, 0.5)	# start, stop in seconds
 
 
 def load_rgb(fileobj):
