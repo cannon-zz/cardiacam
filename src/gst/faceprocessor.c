@@ -28,6 +28,9 @@
  */
 
 
+#include <math.h>
+
+
 #include <glib.h>
 #include <gst/gst.h>
 
@@ -66,6 +69,38 @@ G_DEFINE_TYPE_WITH_CODE(GstFaceProcessor, gst_face_processor, GST_TYPE_BIN, addi
  */
 
 
+static void caps_notify_handler(GObject *object, GParamSpec *pspec, gpointer user_data)
+{
+	GstFaceProcessor *element = GST_FACE_PROCESSOR(gst_pad_get_parent(object));
+	GstCaps *caps;
+	GstStructure *s;
+	gint rate_num, rate_den;
+	gboolean success = TRUE;
+
+	caps = gst_pad_get_current_caps(GST_PAD(object));
+	if(!caps || !gst_caps_is_fixed(caps))
+		goto done;
+
+	s = gst_caps_get_structure(caps, 0);
+	success &= gst_structure_get_fraction(s, "framerate", &rate_num, &rate_den);
+
+	if(success) {
+		gint rate = ceil((double) rate_num / rate_den);
+
+		GST_DEBUG_OBJECT(element, "input caps = %" GST_PTR_FORMAT "; RGB time series will be resampled from %d/%d Hz to %d Hz", caps, rate_num, rate_den, rate);
+
+		/* FIXME:  does this leak memory? */
+		g_object_set(G_OBJECT(element->capsfilter), "caps", gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, rate, NULL), NULL);
+	} else
+		GST_ERROR_OBJECT(element, "could not determine framerate from input caps %" GST_PTR_FORMAT, caps);
+
+done:
+	if(caps)
+		gst_caps_unref(caps);
+	gst_object_unref(element);
+}
+
+
 /*
  * ============================================================================
  *
@@ -81,6 +116,8 @@ static void finalize(GObject *object)
 
 	gst_object_unref(element->face2rgb);
 	element->face2rgb = NULL;
+	gst_object_unref(element->capsfilter);
+	element->capsfilter = NULL;
 
 	G_OBJECT_CLASS(gst_face_processor_parent_class)->finalize(object);
 }
@@ -106,28 +143,30 @@ static void gst_face_processor_init(GstFaceProcessor *faceprocessor)
 {
 	GstBin *bin = GST_BIN(faceprocessor);
 	GstElement *element = GST_ELEMENT(faceprocessor);
-	GstElement *resample, *capsfilter, *bandpass, *tsvenc, *sink;
+	GstElement *resample, *bandpass, *tsvenc, *sink;
+	GstPad *pad;
 
 	/* FIXME:  implement whitening filter.  also use for band pass? */
 	faceprocessor->face2rgb = gst_element_factory_make("face2rgb", "face2rgb"),
 	gst_object_ref(faceprocessor->face2rgb);	/* now two refs */
+	faceprocessor->capsfilter = gst_element_factory_make("capsfilter", "capsfilter"),
+	gst_object_ref(faceprocessor->capsfilter);	/* now two refs */
 	gst_bin_add_many(bin,
 		faceprocessor->face2rgb,	/* consume one ref */
 		resample = gst_element_factory_make("audiorationalresample", "audiorationalresample"),
-		capsfilter = gst_element_factory_make("capsfilter", "capsfilter"),
+		faceprocessor->capsfilter,
 		bandpass = gst_element_factory_make("audiochebband", "audiochebband"),
 		tsvenc = gst_element_factory_make("tsvenc", "tsvenc"),
 		sink = gst_element_factory_make("fdsink", "sink"),
 		NULL
 	);
 
-	gst_element_add_pad(element, gst_ghost_pad_new("sink", gst_element_get_static_pad(faceprocessor->face2rgb, "sink")));
+	pad = gst_ghost_pad_new("sink", gst_element_get_static_pad(faceprocessor->face2rgb, "sink"));
+	g_signal_connect_after(pad, "notify::caps", (GCallback) caps_notify_handler, NULL);
+	gst_element_add_pad(element, pad);
 
-	/* FIXME;  auto-adjust output rate to something suitable for video
-	 * frame rate */
-	g_object_set(G_OBJECT(capsfilter), "caps", gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, 500, NULL), NULL);
 	g_object_set(G_OBJECT(bandpass), "lower-frequency", 0.5, "upper-frequency", 5.0, "poles", 4, NULL);
 	g_object_set(G_OBJECT(sink), "fd", 1, "sync", FALSE, "async", FALSE, NULL);
 
-	gst_element_link_many(faceprocessor->face2rgb, resample, capsfilter, bandpass, tsvenc, sink, NULL);
+	gst_element_link_many(faceprocessor->face2rgb, resample, faceprocessor->capsfilter, bandpass, tsvenc, sink, NULL);
 }

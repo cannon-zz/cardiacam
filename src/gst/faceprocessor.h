@@ -80,6 +80,7 @@ struct _GstFaceProcessor {
 	GstBin bin;
 
 	GstElement *face2rgb;
+	GstElement *capsfilter;
 };
 
 
