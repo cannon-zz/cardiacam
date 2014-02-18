@@ -112,6 +112,18 @@ AC_SUBST([gstreamer_audio_LIBS])
 
 
 #
+# Check for libusb library
+#
+
+
+AC_SUBST([LIBUSB_RELEASE], [1.0])
+AC_SUBST([MIN_LIBUSB_VERSION], [1.0.0])
+PKG_CHECK_MODULES([libusb], [libusb-${LIBUSB_RELEASE} >= ${MIN_LIBUSB_VERSION}])
+AC_SUBST([libusb_CFLAGS])
+AC_SUBST([libusb_LIBS])
+
+
+#
 # Output configure information
 #
 
