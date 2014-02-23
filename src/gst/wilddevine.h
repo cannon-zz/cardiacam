@@ -81,15 +81,35 @@ struct _GstWildDevineClass {
 struct _GstWildDevine {
 	GstBaseSrc basesrc;
 
+	/*
+	 * usb context
+	 */
+
 	libusb_context *usb_context;
 	libusb_device_handle *usb_handle;
 
+	/*
+	 * hardware information
+	 */
+
+	guint64 version;
+	guint64 serial;
+
+	/*
+	 * sample index
+	 */
+
 	guint64 next_offset;
+
+	/*
+	 * sample collection thread
+	 */
 
 	GList *queue;
 	GMutex queue_lock;
 	GCond queue_data_avail;
 	GThread *collect_thread;
+	gboolean pll_locked;
 	gboolean stop_requested;
 	GstFlowReturn collect_status;
 };

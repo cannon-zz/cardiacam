@@ -186,15 +186,15 @@ static GstClockTimeDiff pll_period(const struct pll *pll)
 
 
 /*
- * wrapper to retrieve a regex match, parse as base 16 int, scale, and
- * return as float in [0, 1).
+ * wrapper to retrieve a regex match, parse as base 16 int, and return
+ * result.
  */
 
 
-static double fetch_raw_sample(const GMatchInfo *match_info, gint n)
+static unsigned long fetch_wilddevine_sample(const GMatchInfo *match_info, gint n)
 {
 	gchar *s = g_match_info_fetch(match_info, n);
-	float x = strtol(s, NULL, 16) / 65536.0;
+	unsigned long x = strtol(s, NULL, 16);
 	g_free(s);
 	return x;
 }
@@ -328,18 +328,41 @@ static gpointer collect_thread(gpointer _element)
 		 * contain data */
 		g_string_append_len(buffer, (char *) &read[1], read[0]);
 
-		/* loop over matches, and remove data from buffer */
-		g_regex_match(raw_pattern, buffer->str, 0, &match_info);
+		/* check for version number */
+		g_regex_match(ver_pattern, buffer->str, 0, &match_info);
+		if(g_match_info_matches(match_info)) {
+			guint64 version = fetch_wilddevine_sample(match_info, 1);
+			if(version != element->version) {
+				element->version = version;
+				GST_INFO_OBJECT(element, "version = %lu", element->version);
+				g_object_notify(G_OBJECT(element), "version");
+			}
+		}
+		g_match_info_free(match_info);
+
+		/* check for serial number */
+		g_regex_match(ser_pattern, buffer->str, 0, &match_info);
+		if(g_match_info_matches(match_info)) {
+			guint64 serial = fetch_wilddevine_sample(match_info, 1);
+			if(serial != element->serial) {
+				element->serial = serial;
+				GST_INFO_OBJECT(element, "serial = %lu", element->serial);
+				g_object_notify(G_OBJECT(element), "serial");
+			}
+		}
+		g_match_info_free(match_info);
+
+		/* loop over sample matches, and remove data from buffer */
 		n = 0;
+		g_regex_match(raw_pattern, buffer->str, 0, &match_info);
 		g_mutex_lock(&element->queue_lock);
 		while(g_match_info_matches(match_info)) {
 			struct queued_sample *sample = g_new(struct queued_sample, 1);
 			gboolean locked;
 			sample->t = pll_correct(pll, t, &locked);
 			sample->dt = pll_period(pll);
-			sample->scl = fetch_raw_sample(match_info, 1);
-			sample->ppg = fetch_raw_sample(match_info, 2);
-			GST_DEBUG_OBJECT(element, locked ? "PLL locked" : "PLL unlocked");
+			sample->scl = fetch_wilddevine_sample(match_info, 1) / 65536.0;
+			sample->ppg = fetch_wilddevine_sample(match_info, 2) / 65536.0;
 
 			g_match_info_fetch_pos(match_info, 0, NULL, &n);
 			g_match_info_next(match_info, NULL);
@@ -349,6 +372,11 @@ static gpointer collect_thread(gpointer _element)
 				g_cond_broadcast(&element->queue_data_avail);
 			} else
 				g_free(sample);
+			if(locked != element->pll_locked) {
+				element->pll_locked = locked;
+				GST_INFO_OBJECT(element, locked ? "PLL locked" : "PLL unlocked");
+				g_object_notify(G_OBJECT(element), "pll-locked");
+			}
 		}
 		g_mutex_unlock(&element->queue_lock);
 		g_match_info_free(match_info);
@@ -438,6 +466,7 @@ static gboolean start(GstBaseSrc *src)
 	g_assert(element->queue == NULL);
 
 	element->stop_requested = FALSE;
+	element->pll_locked = FALSE;
 	element->collect_thread = g_thread_new(NULL, collect_thread, element);
 
 done:
@@ -575,6 +604,41 @@ done:
  */
 
 
+enum property {
+	ARG_VERSION = 1,
+	ARG_SERIAL,
+	ARG_PLL_LOCKED
+};
+
+
+static void get_property(GObject *object, enum property prop_id, GValue *value, GParamSpec *pspec)
+{
+	GstWildDevine *element = GST_WILDDEVINE(object);
+
+	GST_OBJECT_LOCK(element);
+
+	switch(prop_id) {
+	case ARG_VERSION:
+		g_value_set_uint64(value, element->version);
+		break;
+
+	case ARG_SERIAL:
+		g_value_set_uint64(value, element->serial);
+		break;
+
+	case ARG_PLL_LOCKED:
+		g_value_set_boolean(value, element->pll_locked);
+		break;
+
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+		break;
+	}
+
+	GST_OBJECT_UNLOCK(element);
+}
+
+
 static void finalize(GObject *object)
 {
 	GstWildDevine *element = GST_WILDDEVINE(object);
@@ -617,6 +681,7 @@ static void gst_wilddevine_class_init(GstWildDevineClass *klass)
 	GstBaseSrcClass *src_class = GST_BASE_SRC_CLASS(klass);
 
 	object_class->finalize = GST_DEBUG_FUNCPTR(finalize);
+	object_class->get_property = GST_DEBUG_FUNCPTR(get_property);
 
 	src_class->start = GST_DEBUG_FUNCPTR(start);
 	src_class->stop = GST_DEBUG_FUNCPTR(stop);
@@ -631,6 +696,42 @@ static void gst_wilddevine_class_init(GstWildDevineClass *klass)
 	);
 
 	gst_element_class_add_pad_template(element_class, gst_static_pad_template_get(&src_factory));
+
+	g_object_class_install_property(
+		object_class,
+		ARG_VERSION,
+		g_param_spec_uint64(
+			"version",
+			"Version",
+			"Hardware version number.",
+			0, G_MAXUINT64, 0,
+			G_PARAM_READABLE | G_PARAM_STATIC_STRINGS
+		)
+	);
+
+	g_object_class_install_property(
+		object_class,
+		ARG_SERIAL,
+		g_param_spec_uint64(
+			"serial",
+			"Serial number",
+			"Hardware serial number.",
+			0, G_MAXUINT64, 0,
+			G_PARAM_READABLE | G_PARAM_STATIC_STRINGS
+		)
+	);
+
+	g_object_class_install_property(
+		object_class,
+		ARG_PLL_LOCKED,
+		g_param_spec_boolean(
+			"pll-locked",
+			"PLL Locked",
+			"Software sample clock reconstruction is stable.",
+			FALSE,
+			G_PARAM_READABLE | G_PARAM_STATIC_STRINGS
+		)
+	);
 }
 
 
@@ -646,6 +747,8 @@ static void gst_wilddevine_init(GstWildDevine *element)
 
 	libusb_init(&element->usb_context);
 	element->usb_handle = NULL;
+
+	element->version = element->serial = -1;
 
 	element->queue = NULL;
 	g_mutex_init(&element->queue_lock);
