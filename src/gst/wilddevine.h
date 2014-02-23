@@ -84,14 +84,14 @@ struct _GstWildDevine {
 	libusb_context *usb_context;
 	libusb_device_handle *usb_handle;
 
-	GSList *queue;
+	guint64 next_offset;
+
+	GList *queue;
 	GMutex queue_lock;
 	GCond queue_data_avail;
 	GThread *collect_thread;
 	gboolean stop_requested;
 	GstFlowReturn collect_status;
-
-	gfloat *history;
 };
 
 

@@ -45,7 +45,7 @@
 
 #include <math.h>
 #include <stdlib.h>
-#include <stdio.h>
+#include <string.h>
 
 
 #include <libusb.h>
@@ -64,18 +64,25 @@
 #define WILDDEVINE_PROD_ID 0x0001
 #define WILDDEVINE_INTERFACE 0
 #define WILDDEVINE_ENDPOINT 0x81
-#define WILDDEVINE_TIMEOUT 80	/* milliseconds */
+#define WILDDEVINE_TIMEOUT 80		/* milliseconds */
 
 
-#define RATE 30			/* Hertz */
-#define UNIT_SIZE 16		/* bytes */
-#define KERNEL_LENGTH 10	/* samples */
+#define RATE 50				/* Hertz */
+#define UNIT_SIZE (2*sizeof(float))	/* bytes (2 floats) */
+#define KERNEL_LENGTH 10		/* samples */
+
+
+#undef PLL_DEBUG			/* dump PLL debug info */
+#ifdef PLL_DEBUG
+#include <stdio.h>
+#endif
 
 
 struct queued_sample {
 	GstClockTime t;
-	guint16 scl;
-	guint16 ppg;
+	GstClockTimeDiff dt;
+	gfloat scl;
+	gfloat ppg;
 };
 
 
@@ -126,13 +133,7 @@ static struct pll *pll_new(void)
 	struct pll *pll = g_new(struct pll, 1);
 
 	pll->t = GST_CLOCK_TIME_NONE;
-
-	/*
-	 * initialize sample period to the measurement I obtained from my
-	 * device
-	 */
-
-	pll->dt = 33570508;	/* nanoseconds */
+	pll->dt = 0;
 
 	return pll;
 }
@@ -144,40 +145,58 @@ static void pll_free(struct pll *pll)
 }
 
 
-static gint64 round_to_integer_multiple(gint64 x, gint64 a, gint *n)
-{
-	x += a/2;
-	x /= a;
-	if(n)
-		*n = x;
-	return x * a;
-}
-
-
-static GstClockTime pll_correct(struct pll *pll, GstClockTime t)
+static GstClockTime pll_correct(struct pll *pll, GstClockTime t, gboolean *locked)
 {
 	GstClockTimeDiff error;
-	gint n;
 
-	if(!GST_CLOCK_TIME_IS_VALID(pll->t))
+	g_assert(GST_CLOCK_TIME_IS_VALID(t));
+
+	if(!GST_CLOCK_TIME_IS_VALID(pll->t)) {
 		pll->t = t;
-	else {
-		/*fprintf(stderr, "a: %lu %lu %ld\n", t, pll->t, pll->dt);*/
-		pll->t += round_to_integer_multiple(t - pll->t, pll->dt, &n);
-		/*fprintf(stderr, "b: %lu %d\n", pll->t, n);*/
-
-		/* force samples to be in sequence */
-		pll->t -= (n - 1) * pll->dt;
+		*locked = FALSE;
+	} else {
+		if(!pll->dt) {
+			g_assert_cmpuint(t, >=, pll->t);
+			pll->dt = t - pll->t;
+		}
+#ifdef PLL_DEBUG
+		fprintf(stderr, "a: %lu %lu %ld\n", t, pll->t, pll->dt);
+#endif
+		pll->t += pll->dt;
 
 		error = GST_CLOCK_DIFF(pll->t, t);	/* t - pll->t */
-		error /= 1000;
-		/*fprintf(stderr, "c: %ld\n", error);*/
+		*locked = !error || pll->dt / 2 > labs(error);
+#ifdef PLL_DEBUG
+		fprintf(stderr, "c: %ld\n", error);
+#endif
 
-		pll->t += error * 4;
-		pll->dt += error;
+		pll->t += error / 128;
+		pll->dt += error / 1024;
+		g_assert_cmpint(pll->dt, >, 0);
 	}
 
 	return pll->t;
+}
+
+
+static GstClockTimeDiff pll_period(const struct pll *pll)
+{
+	return pll->dt;
+}
+
+
+/*
+ * wrapper to retrieve a regex match, parse as base 16 int, scale, and
+ * return as float in [0, 1).
+ */
+
+
+static double fetch_raw_sample(const GMatchInfo *match_info, gint n)
+{
+	gchar *s = g_match_info_fetch(match_info, n);
+	float x = strtol(s, NULL, 16) / 65536.0;
+	g_free(s);
+	return x;
 }
 
 
@@ -186,7 +205,7 @@ static GstClockTime pll_correct(struct pll *pll, GstClockTime t)
  */
 
 
-static gboolean open(GstWildDevine *element)
+static gboolean open_device(GstWildDevine *element)
 {
 	libusb_device **list;
 	libusb_device *device = NULL;
@@ -235,7 +254,13 @@ done:
 static gpointer collect_thread(gpointer _element)
 {
 	GstWildDevine *element = GST_WILDDEVINE(_element);
+#if 1
 	GstClock *clock = gst_system_clock_obtain();
+	GstClockTime base_time = gst_clock_get_time(clock);
+#else	/* why doesn't this work!? */
+	GstClock *clock = gst_element_get_clock(GST_ELEMENT(_element));
+	GstClockTime base_time = gst_element_get_base_time(GST_ELEMENT(_element));
+#endif
 	GRegex *raw_pattern, *ser_pattern, *ver_pattern;
 	GString *buffer = g_string_new("");
 	struct pll *pll = pll_new();
@@ -245,16 +270,21 @@ static gpointer collect_thread(gpointer _element)
 	ver_pattern = g_regex_new("<VER>([[:xdigit:]]+)<\\\\VER>", G_REGEX_MULTILINE | G_REGEX_OPTIMIZE, 0, NULL);
 	g_assert(raw_pattern && ser_pattern && ver_pattern);
 
-	while(!element->stop_requested) {
+	while(1) {
 		unsigned char read[8];
 		int n;
 		GstClockTime t;
 		GMatchInfo *match_info;
 
+		if(element->stop_requested) {
+			element->collect_status = GST_FLOW_EOS;
+			break;
+		}
+
 		switch(libusb_interrupt_transfer(element->usb_handle, WILDDEVINE_ENDPOINT, read, sizeof(read), &n, WILDDEVINE_TIMEOUT)) {
 		case 0:
 			/* success */
-			t = gst_clock_get_time(clock);
+			t = gst_clock_get_time(clock) - base_time;
 			if(n != sizeof(read)) {
 				/* ... but bad read size */
 				GST_ERROR_OBJECT(element, "read %d bytes, expected %lu", n, sizeof(read));
@@ -304,15 +334,21 @@ static gpointer collect_thread(gpointer _element)
 		g_mutex_lock(&element->queue_lock);
 		while(g_match_info_matches(match_info)) {
 			struct queued_sample *sample = g_new(struct queued_sample, 1);
-			sample->t = pll_correct(pll, t);
-			sample->scl = strtol(g_match_info_fetch(match_info, 1), NULL, 16);
-			sample->ppg = strtol(g_match_info_fetch(match_info, 2), NULL, 16);
-
-			element->queue = g_slist_prepend(element->queue, sample);
-			g_cond_broadcast(&element->queue_data_avail);
+			gboolean locked;
+			sample->t = pll_correct(pll, t, &locked);
+			sample->dt = pll_period(pll);
+			sample->scl = fetch_raw_sample(match_info, 1);
+			sample->ppg = fetch_raw_sample(match_info, 2);
+			GST_DEBUG_OBJECT(element, locked ? "PLL locked" : "PLL unlocked");
 
 			g_match_info_fetch_pos(match_info, 0, NULL, &n);
 			g_match_info_next(match_info, NULL);
+
+			if(sample->dt > 0) {
+				element->queue = g_list_prepend(element->queue, sample);
+				g_cond_broadcast(&element->queue_data_avail);
+			} else
+				g_free(sample);
 		}
 		g_mutex_unlock(&element->queue_lock);
 		g_match_info_free(match_info);
@@ -332,16 +368,28 @@ done:
 
 
 /*
- * pop the head off a GSList
+ * (t1 - t0) / dt
  */
 
 
-static GSList *g_slist_pop(GSList *list, gpointer *data)
+static double sample_diff(GstClockTime t1, GstClockTime t0, GstClockTimeDiff dt)
 {
-	GSList *new_list = g_slist_remove_link(list, list);
-	*data = list ? list->data : NULL;
-	g_slist_free_1(list);
-	return new_list;
+	return ((double) GST_CLOCK_DIFF(t0, t1)) / dt;
+}
+
+
+/*
+ * how many samples separate the head of the queue from t
+ */
+
+
+static int queued_look_ahead(const GList *list, GstClockTime t)
+{
+	struct queued_sample *sample;
+	if(!list)
+		return -1;
+	sample = (struct queued_sample *) list->data;
+	return round(sample_diff(sample->t, t, sample->dt));
 }
 
 
@@ -350,10 +398,9 @@ static GSList *g_slist_pop(GSList *list, gpointer *data)
  */
 
 
-static double kernel(GstClockTime t0, GstClockTime t1, gint rate)
+static double sinc(double x)
 {
-	double x = M_PI * (t0 - t1) / GST_SECOND * rate;
-
+	x *= M_PI;
 	return x != 0. ? sin(x) / x : 1.0;
 }
 
@@ -372,7 +419,7 @@ static gboolean start(GstBaseSrc *src)
 	GstWildDevine *element = GST_WILDDEVINE(src);
 	gboolean success = TRUE;
 
-	if(!open(element)) {
+	if(!open_device(element)) {
 		success = FALSE;
 		goto done;
 	}
@@ -386,8 +433,7 @@ static gboolean start(GstBaseSrc *src)
 		goto done;
 	}
 
-	/* two channels, KERNEL_LENGTH / 2 samples in each */
-	element->history = g_malloc0(KERNEL_LENGTH * sizeof(*element->history));
+	element->next_offset = 0;
 
 	g_assert(element->queue == NULL);
 
@@ -408,11 +454,8 @@ static gboolean stop(GstBaseSrc *src)
 	g_thread_join(element->collect_thread);
 	element->collect_thread = NULL;
 
-	g_slist_free_full(element->queue, g_free);
+	g_list_free_full(element->queue, g_free);
 	element->queue = NULL;
-
-	g_free(element->history);
-	element->history = NULL;
 
 	libusb_release_interface(element->usb_handle, WILDDEVINE_INTERFACE);
 	libusb_close(element->usb_handle);
@@ -422,51 +465,103 @@ static gboolean stop(GstBaseSrc *src)
 }
 
 
-static GstFlowReturn fill(GstBaseSrc *src, guint64 offset, guint size, GstBuffer *buff)
+static gboolean unlock(GstBaseSrc *src)
+{
+	GST_WILDDEVINE(src)->stop_requested = TRUE;
+	return TRUE;
+}
+
+
+static GstFlowReturn fill(GstBaseSrc *src, guint64 offset, guint size, GstBuffer *buf)
 {
 	GstWildDevine *element = GST_WILDDEVINE(src);
-	guint i;
+	GList *queue = NULL;
+	GstMapInfo dstmap;
+	gfloat *data;
+	gint length, i;
 	GstFlowReturn result = GST_FLOW_OK;
 
 	g_assert(size % UNIT_SIZE == 0);
 
 	/*
+	 * set metadata
+	 */
+
+	GST_BUFFER_OFFSET(buf) = element->next_offset;
+	element->next_offset += length = size / UNIT_SIZE;
+	GST_BUFFER_OFFSET_END(buf) = element->next_offset;
+	GST_BUFFER_PTS(buf) = GST_BUFFER_DTS(buf) = gst_util_uint64_scale_int_round(GST_BUFFER_OFFSET(buf), GST_SECOND, RATE);
+	GST_BUFFER_DURATION(buf) = gst_util_uint64_scale_int_round(GST_BUFFER_OFFSET_END(buf), GST_SECOND, RATE) - GST_BUFFER_PTS(buf);
+
+	/*
+	 * wait for data.  after this, we can use queue without holding
+	 * lock.  list manipulation performed by collect_thread() will not
+	 * modify this part of the list, nor will what we do interfer with
+	 * what it's doing
+	 */
+
+	g_mutex_lock(&element->queue_lock);
+	while(element->collect_status == GST_FLOW_OK && queued_look_ahead(element->queue, GST_BUFFER_PTS(buf) + GST_BUFFER_DURATION(buf)) < KERNEL_LENGTH / 2)
+		g_cond_wait(&element->queue_data_avail, &element->queue_lock);
+	result = element->collect_status;
+	queue = element->queue;
+	g_mutex_unlock(&element->queue_lock);
+
+	if(result != GST_FLOW_OK)
+		goto done;
+
+	/*
 	 * fill buffer
 	 */
 
-	for(i = 0; i < size; i += 2) {
-		GSList *queue = NULL;
+	gst_buffer_map(buf, &dstmap, GST_MAP_WRITE);
+	data = (gfloat *) dstmap.data;
+	memset(data, 0, size);
+	for(data = (gfloat *) dstmap.data, i = 0; i < length; data += 2, i++) {
+		GstClockTime t = GST_BUFFER_PTS(buf) + gst_util_uint64_scale_int_round(i, GST_SECOND, RATE);
+		GList *queue_elem;
 
 		/*
-		 * wait for data then quickly transfer samples to this
-		 * function's stack, allowing data collection thread to
-		 * resume
+		 * loop over queued data
 		 */
 
-		g_mutex_lock(&element->queue_lock);
-		while(!element->queue && element->collect_status == GST_FLOW_OK)
-			g_cond_wait(&element->queue_data_avail, &element->queue_lock);
-		result = element->collect_status;
-		queue = element->queue;
-		element->queue = NULL;
-		g_mutex_unlock(&element->queue_lock);
+		for(queue_elem = queue; queue_elem; queue_elem = g_list_next(queue_elem)) {
+			struct queued_sample *sample = queue_elem->data;
+			double dn = sample_diff(sample->t, t, sample->dt);
+			double kernel;
 
-		if(result != GST_FLOW_OK)
-			break;
+			if(dn > KERNEL_LENGTH / 2)
+				/* sample is too new */
+				continue;
 
-		/*
-		 * loop over collected data
-		 */
+			if(dn < -KERNEL_LENGTH / 2) {
+				/*
+				 * from this sample to the end of the queue
+				 * are no longer needed, remove them.  it
+				 * should be impossible that this sequence
+				 * includes the first element in the list
+				 */
 
-		queue = g_slist_reverse(queue);
-		while(queue) {
-			struct queued_sample *sample;
-			queue = g_slist_pop(queue, &sample);
-			fprintf(stderr, "%lu %.7g %.7g\n", sample->t, sample->scl / 65536.0, sample->ppg / 65536.0);
-			g_free(sample);
+				g_assert(g_list_previous(queue_elem) != NULL);
+				g_list_previous(queue_elem)->next = NULL;
+				g_list_free_full(queue_elem, g_free);
+				queue_elem = NULL;
+				break;
+			}
+
+			/*
+			 * channel 0:  skin conductance
+			 * channel 1:  photoplethysmograph
+			 */
+
+			kernel = sinc(dn);
+			data[0] += kernel * sample->scl;
+			data[1] += kernel * sample->ppg;
 		}
 	}
+	gst_buffer_unmap(buf, &dstmap);
 
+done:
 	return result;
 }
 
@@ -483,6 +578,9 @@ static GstFlowReturn fill(GstBaseSrc *src, guint64 offset, guint size, GstBuffer
 static void finalize(GObject *object)
 {
 	GstWildDevine *element = GST_WILDDEVINE(object);
+
+	g_assert(element->collect_thread == NULL);
+	g_assert(element->queue == NULL);
 
 	libusb_exit(element->usb_context);
 	element->usb_context = NULL;
@@ -522,12 +620,13 @@ static void gst_wilddevine_class_init(GstWildDevineClass *klass)
 
 	src_class->start = GST_DEBUG_FUNCPTR(start);
 	src_class->stop = GST_DEBUG_FUNCPTR(stop);
+	src_class->unlock = GST_DEBUG_FUNCPTR(unlock);
 	src_class->fill = GST_DEBUG_FUNCPTR(fill);
 
 	gst_element_class_set_details_simple(element_class, 
 		"WildDevine",
 		"Source/Audio",
-		"Retrieves photoplethysmograph and skin conductance level time series from a WildDevine capture device.",
+		"Retrieves skin conductance level and photoplethysmograph time series from a WildDevine capture device.",
 		"Kipp Cannon <kipp.cannon@ligo.org>"
 	);
 
@@ -537,8 +636,13 @@ static void gst_wilddevine_class_init(GstWildDevineClass *klass)
 
 static void gst_wilddevine_init(GstWildDevine *element)
 {
-	gst_base_src_set_live(GST_BASE_SRC(element), TRUE);
-	gst_base_src_set_format(GST_BASE_SRC(element), GST_FORMAT_TIME);
+	GstBaseSrc *basesrc = GST_BASE_SRC(element);
+
+	GST_OBJECT_FLAG_SET(element, GST_ELEMENT_FLAG_REQUIRE_CLOCK);
+
+	gst_base_src_set_live(basesrc, TRUE);
+	gst_base_src_set_format(basesrc, GST_FORMAT_TIME);
+	gst_base_src_set_blocksize(basesrc, RATE / 10 * UNIT_SIZE);	/* 1/10th of a second */
 
 	libusb_init(&element->usb_context);
 	element->usb_handle = NULL;
@@ -548,5 +652,4 @@ static void gst_wilddevine_init(GstWildDevine *element)
 	g_cond_init(&element->queue_data_avail);
 	element->collect_thread = NULL;
 	element->collect_status = GST_FLOW_OK;
-	element->history = NULL;
 }
