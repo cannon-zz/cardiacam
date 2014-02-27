@@ -8,15 +8,6 @@ from cardiacam import ica
 logging.basicConfig(level = logging.INFO)
 
 
-# rgb
-wguess = numpy.array(
-	[[ 0.05648833,  0.97166715,  0.22950386],
-	 [ 0.50415065,  0.17065149, -0.84658738],
-	 [ 0.86176632, -0.16352682,  0.48022681]]
-)
-# default
-#wguess = None
-
 transient = (7.0, 0.5)	# start, stop in seconds
 
 
@@ -52,7 +43,7 @@ logging.info("after transient removal, have %d samples spanning [%g s, %g s)" % 
 rgb, t = differentiate(rgb, t)
 
 
-output = sys.stdout
+# how to compute unmix transform
 def unmix_rgb(rgb, n_comp = 3):
 	# relationship between the RGB streams, the unmixed streams, and
 	# the two other matrices returned by this function is:
@@ -104,11 +95,12 @@ def unmix_rgb(rgb, n_comp = 3):
 # finding the unmix transform
 unmix, s = unmix_rgb(rgb[:,:3] + rgb[:,3:])
 
-# now unmix the foreehad and cheek streams
+# now unmix the forehead and cheek streams
 forehead_s = numpy.dot(rgb[:,:3] - rgb[:,:3].mean(0), unmix)
 cheek_s = numpy.dot(rgb[:,3:] - rgb[:,3:].mean(0), unmix)
 
 # write output
+output = sys.stdout
 fmt = "%.16g" + " %.16g" * (forehead_s.shape[1] + cheek_s.shape[1])
 for t, forehead_x, cheek_x in itertools.izip(t, forehead_s[:], cheek_s[:]):
 	print >>output, fmt % ((t,) + tuple(forehead_x) + tuple(cheek_x))
