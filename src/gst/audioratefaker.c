@@ -135,13 +135,19 @@ static GstCaps *transform_caps(GstBaseTransform *trans, GstPadDirection directio
 	/* intersect that result with the caps allowed by the pad template.
 	 * this repopulates the rate elements with the allowed ranges */
 	switch(direction) {
-	case GST_PAD_SRC:
-		othercaps = gst_caps_intersect_full(caps, gst_pad_get_pad_template_caps(GST_BASE_TRANSFORM_SINK_PAD(trans)), GST_CAPS_INTERSECT_FIRST);
+	case GST_PAD_SRC: {
+		GstCaps *tmpltcaps = gst_pad_get_pad_template_caps(GST_BASE_TRANSFORM_SINK_PAD(trans));
+		othercaps = gst_caps_intersect_full(caps, tmpltcaps, GST_CAPS_INTERSECT_FIRST);
+		gst_caps_unref(tmpltcaps);
 		break;
+	}
 
-	case GST_PAD_SINK:
-		othercaps = gst_caps_intersect_full(caps, gst_pad_get_pad_template_caps(GST_BASE_TRANSFORM_SRC_PAD(trans)), GST_CAPS_INTERSECT_FIRST);
+	case GST_PAD_SINK: {
+		GstCaps *tmpltcaps = gst_pad_get_pad_template_caps(GST_BASE_TRANSFORM_SRC_PAD(trans));
+		othercaps = gst_caps_intersect_full(caps, tmpltcaps, GST_CAPS_INTERSECT_FIRST);
+		gst_caps_unref(tmpltcaps);
 		break;
+	}
 
 	default:
 		g_assert_not_reached();
