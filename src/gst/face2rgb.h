@@ -80,7 +80,7 @@ struct _GstFace2RGBClass {
 struct _GstFace2RGB {
 	GstBaseTransform basetransform;
 
-	gdouble gamma;
+	gfloat gamma;
 	gint face_x, face_y;	/* pixels */
 	gint face_width, face_height;	/* pixels */
 	gint nose_x, nose_y;	/* pixels */

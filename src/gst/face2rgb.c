@@ -255,7 +255,7 @@ static gboolean start(GstBaseTransform *trans)
 static GstFlowReturn transform(GstBaseTransform *trans, GstBuffer *inbuf, GstBuffer *outbuf)
 {
 	GstFace2RGB *element = GST_FACE_2_RGB(trans);
-	const gdouble gamma = element->gamma;
+	const gfloat gamma = element->gamma;
 	GstMapInfo srcmap, dstmap;
 	gdouble *out;
 	guchar *row, *last_row;
@@ -289,9 +289,9 @@ static GstFlowReturn transform(GstBaseTransform *trans, GstBuffer *inbuf, GstBuf
 			 * to the power gamma) in both the face and
 			 * background components, and therefore will cancel
 			 * itself out of the output */
-			gdouble r = *in++;
-			gdouble g = *in++;
-			gdouble b = *in++;
+			gfloat r = *in++;
+			gfloat g = *in++;
+			gfloat b = *in++;
 			if(gamma != 1.0) {
 				r = pow(r, gamma);
 				g = pow(g, gamma);
@@ -393,7 +393,7 @@ static void set_property(GObject *object, enum property prop_id, const GValue *v
 
 	switch(prop_id) {
 	case ARG_GAMMA:
-		element->gamma = g_value_get_double(value);
+		element->gamma = g_value_get_float(value);
 		break;
 
 	case ARG_FACE_X:
@@ -473,7 +473,7 @@ static void get_property(GObject *object, enum property prop_id, GValue *value, 
 
 	switch(prop_id) {
 	case ARG_GAMMA:
-		g_value_set_double(value, element->gamma);
+		g_value_set_float(value, element->gamma);
 		break;
 
 	case ARG_FACE_X:
@@ -603,11 +603,11 @@ static void gst_face_2_rgb_class_init(GstFace2RGBClass *klass)
 	g_object_class_install_property(
 		gobject_class,
 		ARG_GAMMA,
-		g_param_spec_double(
+		g_param_spec_float(
 			"gamma",
 			"gamma",
 			"Gamma correction.",
-			0, G_MAXDOUBLE, DEFAULT_GAMMA,
+			0, G_MAXFLOAT, DEFAULT_GAMMA,
 			G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT
 		)
 	);
