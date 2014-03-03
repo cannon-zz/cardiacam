@@ -20,6 +20,53 @@
 
 
 /*
+ * fast pow() code is
+ *
+ *=====================================================================*
+ *                   Copyright (C) 2012 Paul Mineiro                   *
+ * All rights reserved.                                                *
+ *                                                                     *
+ * Redistribution and use in source and binary forms, with             *
+ * or without modification, are permitted provided that the            *
+ * following conditions are met:                                       *
+ *                                                                     *
+ *     * Redistributions of source code must retain the                *
+ *     above copyright notice, this list of conditions and             *
+ *     the following disclaimer.                                       *
+ *                                                                     *
+ *     * Redistributions in binary form must reproduce the             *
+ *     above copyright notice, this list of conditions and             *
+ *     the following disclaimer in the documentation and/or            *
+ *     other materials provided with the distribution.                 *
+ *                                                                     *
+ *     * Neither the name of Paul Mineiro nor the names                *
+ *     of other contributors may be used to endorse or promote         *
+ *     products derived from this software without specific            *
+ *     prior written permission.                                       *
+ *                                                                     *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND              *
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,         *
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES               *
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE             *
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER               *
+ * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,                 *
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES            *
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE           *
+ * GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR                *
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF          *
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT           *
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY              *
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE             *
+ * POSSIBILITY OF SUCH DAMAGE.                                         *
+ *                                                                     *
+ * Contact: Paul Mineiro <paul@mineiro.com>                            *
+ *=====================================================================*
+ *
+ * See http://code.google.com/p/fastapprox
+ */
+
+
+/*
  * ============================================================================
  *
  *                                  Preamble
@@ -151,6 +198,46 @@ static void make_mask(GstFace2RGB *element)
 	GST_DEBUG_OBJECT(element, "forehead is %d pixels, cheeks are %d pixels", area_forehead, area_cheek);
 	element->bg_over_forehead_area_ratio = area_forehead ? (double) area_bg / area_forehead : 0;
 	element->bg_over_cheek_area_ratio = area_cheek ? (double) area_bg / area_cheek : 0;
+}
+
+
+/*
+ * fast approximate pow() function.  accurate to within +/- 8% in [0,256)
+ * for p in [0, 2].
+ */
+
+
+static float fasterlog2(float x)
+{
+	union {
+		float f;
+		guint32 i;
+	} vx = {
+		.f = x
+	};
+	float y = vx.i;
+
+	y *= 1.1920928955078125e-7f;
+
+	return y - 126.94269504f;
+}
+
+
+static float fasterpow2(float x)
+{
+	union {
+		guint32 i;
+		float f;
+	} v = {
+		.i = (1 << 23) * ((x >= -126.0f ? x : -126.0f) + 126.94269504f)
+	};
+	return v.f;
+}
+
+
+static float fasterpowf(float x, float p)
+{
+	return fasterpow2(p * fasterlog2(x));
 }
 
 
