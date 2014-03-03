@@ -41,6 +41,9 @@
 #include <face2rgb.h>
 
 
+#define FACE_SCALE_FACTOR 1.0
+
+
 #define DEFAULT_GAMMA 1.0
 #define DEFAULT_FACE_X 0
 #define DEFAULT_FACE_Y 0
@@ -113,7 +116,7 @@ static void make_mask(GstFace2RGB *element)
 	 */
 
 	for(y = 0; y < element->height; y++) {
-		gdouble face_y = (y - element->face_y) * y_scale - 1.0;
+		gdouble face_y = ((y - element->face_y) * y_scale - 1.0) / FACE_SCALE_FACTOR;
 		gdouble face_y_squared = face_y * face_y;
 		/* short-cut this whole row if possible */
 		if(face_y_squared > 1.0) {
@@ -124,7 +127,7 @@ static void make_mask(GstFace2RGB *element)
 			continue;
 		}
 		for(x = 0; x < element->width; x++, mask++) {
-			gdouble face_x = (x - element->face_x) * x_scale - 1.0;
+			gdouble face_x = ((x - element->face_x) * x_scale - 1.0) / FACE_SCALE_FACTOR;
 			if(face_x * face_x + face_y_squared > 1.0) {
 				*mask = MASK_BG;
 				area_bg++;
