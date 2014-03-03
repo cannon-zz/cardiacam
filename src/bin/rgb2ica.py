@@ -83,6 +83,13 @@ def unmix_rgb(rgb, n_comp = 3):
 		w[:,1] *= -1.0
 		unmix[:,1] *= -1.0
 
+	# make the red coefficient of the final component positive,
+	# keeping all matrices consistent
+	if unmix[0,2] < 0:
+		s[:,2] *= -1.0
+		w[:,2] *= -1.0
+		unmix[:,2] *= -1.0
+
 	logging.info("unmix = %s" % str(unmix))
 
 	# make sure we've not screwed up the matrices
