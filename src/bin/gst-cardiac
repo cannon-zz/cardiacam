@@ -46,6 +46,7 @@ def parse_command_line():
 		description = "Extract cardiac pulse from a video of a patient."
 	)
 	parser.add_option("--input", metavar = "filename", default = "/dev/video0", help = "Set the name of the input file (default = \"/dev/video0\").  If the filename starts with \"/dev/\" then it is assumed to be a V4L device otherwise it is assumed to be a video file.")
+	parser.add_option("--input-framerate", metavar = "num/den", help = "Force the input frame rate to be this (default = use frame rate reported by source material).  Note, this option does not cause frames to be added or removed, their timestamps are merely recalculated assuming the frame rate to be this.")
 	parser.add_option("--brightness", metavar = "[-1, +1]", type = "float", help = "Adjust brightness for face detection (skin colour is computed from original video).")
 	parser.add_option("--contrast", metavar = "[0, 2]", type = "float", help = "Adjust contrast for face detection (skin colour is computed from original video).")
 	parser.add_option("--gamma", metavar = "gamma", type = "float", default = 1.6, help = "Set gamma correction (default = 1.6).")
@@ -212,7 +213,12 @@ else:
 	src_deferred_link(src, "src_0", elem.get_static_pad("sink"))
 	src = elem
 
-handler.video_src = src = mkelem(pipeline, mkelem(pipeline, src, "capsfilter", caps = Gst.Caps.from_string("video/x-raw, format=(string)RGB")), "tee")
+if options.input_framerate is not None:
+	src = mkelem(pipeline, mkelem(pipeline, src, "videoratefaker"), "capsfilter", caps = Gst.Caps.from_string("video/x-raw, format=(string)RGB, framerate=%s" % options.input_framerate))
+else:
+	src = mkelem(pipeline, src, "capsfilter", caps = Gst.Caps.from_string("video/x-raw, format=(string)RGB"))
+
+handler.video_src = src = mkelem(pipeline, src, "tee")
 
 #
 # limit frame rate into face detector to 5 frames per second (don't need to
