@@ -55,6 +55,12 @@ def unmix_rgb(rgb, n_comp = 3):
 	k, w, s = ica.fastica(rgb, fun = "exp", n_comp = n_comp, w_init = None, maxit = 40000, tol = 1e-14)
 	unmix = numpy.asarray(numpy.asmatrix(k) * w)
 
+	#
+	# the unmix matrix is not unique.  the component order is undefined
+	# and the sign of the components is ambiguous.  the following 5
+	# constrains fix the under and signs of the three components.
+	#
+
 	# move greenest component to position 0, keeping all matrices
 	# consistent
 	i = abs(unmix)[1].argmax()
