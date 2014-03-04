@@ -89,6 +89,7 @@
 
 
 #define FACE_SCALE_FACTOR 0.9
+#undef USE_FASTPOW
 
 
 #define DEFAULT_GAMMA 1.0
@@ -383,9 +384,15 @@ static GstFlowReturn transform(GstBaseTransform *trans, GstBuffer *inbuf, GstBuf
 			gfloat g = *in++;
 			gfloat b = *in++;
 			if(gamma != 1.0) {
-				r = pow(r, gamma);
-				g = pow(g, gamma);
-				b = pow(b, gamma);
+#ifdef USE_FASTPOW
+				r = fasterpowf(r, gamma);
+				g = fasterpowf(g, gamma);
+				b = fasterpowf(b, gamma);
+#else
+				r = powf(r, gamma);
+				g = powf(g, gamma);
+				b = powf(b, gamma);
+#endif
 			}
 			switch((enum mask_t) *mask++) {
 			case MASK_BG:
