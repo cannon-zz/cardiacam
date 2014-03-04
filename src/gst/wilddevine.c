@@ -165,7 +165,7 @@ static GstClockTime pll_correct(struct pll *pll, GstClockTime t, gboolean *locke
 		pll->t += pll->dt;
 
 		error = GST_CLOCK_DIFF(pll->t, t);	/* t - pll->t */
-		*locked = !error || pll->dt / 2 > labs(error);
+		*locked = pll->dt >= 2 * labs(error);
 #ifdef PLL_DEBUG
 		fprintf(stderr, "c: %ld\n", error);
 #endif
@@ -326,7 +326,7 @@ static gpointer collect_thread(gpointer _element)
 
 		/* first byte recieved gives number of remaining bytes that
 		 * contain data */
-		g_string_append_len(buffer, (char *) &read[1], read[0]);
+		g_string_append_len(buffer, (const char *) &read[1], read[0]);
 
 		/* check for version number */
 		g_regex_match(ver_pattern, buffer->str, 0, &match_info);
