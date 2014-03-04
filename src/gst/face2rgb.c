@@ -88,7 +88,7 @@
 #include <face2rgb.h>
 
 
-#define FACE_SCALE_FACTOR 1.0
+#define FACE_SCALE_FACTOR 0.9
 
 
 #define DEFAULT_GAMMA 1.0
