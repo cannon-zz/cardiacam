@@ -67,9 +67,9 @@
 #define WILDDEVINE_TIMEOUT 80		/* milliseconds */
 
 
-#define RATE 50				/* Hertz */
+#define RATE 40				/* Hertz */
 #define UNIT_SIZE (2*sizeof(float))	/* bytes (2 floats) */
-#define KERNEL_LENGTH 10		/* samples */
+#define KERNEL_LENGTH 17		/* samples */
 
 
 #undef PLL_DEBUG			/* dump PLL debug info */
