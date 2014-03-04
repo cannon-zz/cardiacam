@@ -1,0 +1,163 @@
+#!/usr/bin/env python
+
+
+#
+# =============================================================================
+#
+#                                   Preamble
+#
+# =============================================================================
+#
+
+
+import logging
+from optparse import OptionParser
+import os
+import sys
+
+
+from gi.repository import GObject
+GObject.threads_init()
+from gi.repository import Gst
+Gst.init(None)
+
+
+from cardiacam import pipeparts
+
+
+__author__ = "Kipp Cannon <kcannon@cita.utoronto.ca>"
+__version__ = "FIXME"
+__date__ = "FIXME"
+
+
+#
+# =============================================================================
+#
+#                                 Command Line
+#
+# =============================================================================
+#
+
+
+def parse_command_line():
+	parser = OptionParser(
+		version = "%prog ??",
+		usage = "%prog [options] filename",
+		description = "Extract cardiac pulse from a video of a patient."
+	)
+	parser.add_option("--input", metavar = "filename", default = "/dev/video0", help = "Set the name of the V4L2 device file (default = \"/dev/video0\").")
+	parser.add_option("--no-display", action = "store_true", help = "Do not display video in window (allows code to run faster than realtime).")
+	parser.add_option("--output", metavar = "filename", help = "Set the name of the output .ogm file (required).")
+	parser.add_option("-v", "--verbose", action = "store_true", help = "Be verbose.")
+
+	options, filenames = parser.parse_args()
+
+	options.vfmt = (320, 240, "100/1")
+
+	if options.output is None:
+		raise ValueError("missing required option --output")
+
+	if options.verbose:
+		logging.basicConfig(level = logging.INFO)
+
+	return options, filenames
+
+
+#
+# =============================================================================
+#
+#                                   Pipeline
+#
+# =============================================================================
+#
+
+
+class Handler(object):
+	# FIXME:  remove when gstreamer wrapping can retrieve message
+	# object properly
+	import re
+	facesparser = re.compile(r'.*faces=[^{]*\{ *(?:"([^"]*)")+ *\}.*')
+	faceparser = re.compile(r'(?P<name>[^ =]*)=\([^)]*\)(?P<value>[^ ,;]*)')
+
+	def __init__(self, mainloop, pipeline):
+		self.mainloop = mainloop
+		self.pipeline = pipeline
+
+		bus = pipeline.get_bus()
+		bus.add_signal_watch()
+		bus.connect("message", self.on_message)
+
+	def on_message(self, bus, message):
+		if message.type == Gst.MessageType.ELEMENT:
+			pass
+		elif message.type == Gst.MessageType.EOS:
+			self.pipeline.set_state(Gst.State.NULL)
+			self.mainloop.quit()
+		elif message.type == Gst.MessageType.ERROR:
+			gerr, dbgmsg = message.parse_error()
+			logging.fatal("(%s:%d '%s'): %s" % (gerr.domain, gerr.code, gerr.message, dbgmsg))
+			sys.exit(1)
+
+
+options, filenames = parse_command_line()
+
+
+pipeline = Gst.Pipeline()
+mainloop = GObject.MainLoop()
+handler = Handler(mainloop, pipeline)
+
+
+#
+# get video stream
+#
+
+
+vsrc = pipeparts.mkelem(pipeline, pipeparts.mkelem(pipeline, None, "v4l2src", device = options.input), "capsfilter", caps = Gst.Caps.from_string("video/x-raw, width=%d, height=%s, framerate=%s" % options.vfmt))
+vsrc = pipeparts.mkelem(pipeline, vsrc, "queue", max_size_buffers = 0, max_size_bytes = 0, max_size_time = 5 * Gst.SECOND)
+vsrc = pipeparts.mkelem(pipeline, vsrc, "videorate")
+if options.verbose:
+	vsrc = pipeparts.mkelem(pipeline, vsrc, "progressreport", name = "video")
+
+
+#
+# get photoplethysmograph stream
+#
+
+
+#psrc = pipeparts.mkelem(pipeline, None, "wilddevine")
+#psrc = pipeparts.mkelem(pipeline, psrc, "queue", max_size_buffers = 0, max_size_bytes = 0, max_size_time = 5 * Gst.SECOND)
+#if options.verbose:
+#	psrc = pipeparts.mkelem(pipeline, psrc, "progressreport", name = "ppg")
+#pipeparts.mkelem(pipeline, pipeparts.mkelem(pipeline, psrc, "tsvenc"), "filesink", location = "blah.txt")
+
+
+#
+# display or not
+#
+
+
+if not options.no_display:
+	vsrc = pipeparts.mkelem(pipeline, vsrc, "tee")
+	pipeparts.mkelem(pipeline, pipeparts.mkelem(pipeline, pipeparts.mkelem(pipeline, vsrc, "queue", max_size_buffers = 0, max_size_bytes = 0, max_size_time = 1 * Gst.SECOND), "videoconvert"), "autovideosink")
+
+
+#
+# encode
+#
+
+
+vsrc = pipeparts.mkelem(pipeline, vsrc, "videoconvert")
+#vsrc = pipeparts.mkelem(pipeline, vsrc, "queue2", temp_template = "/tmp/cardiacam_XXXXXX", max_size_buffers = 0, max_size_time = 10 * 60 * Gst.SECOND)
+vsrc = pipeparts.mkelem(pipeline, vsrc, "queue", max_size_buffers = 0, max_size_bytes = 0, max_size_time = 10 * 60 * Gst.SECOND)
+vsrc = pipeparts.mkelem(pipeline, vsrc, "theoraenc", drop_frames = False)
+vsrc = pipeparts.mkelem(pipeline, vsrc, "oggmux")
+pipeparts.mkelem(pipeline, pipeparts.mkelem(pipeline, vsrc, "queue"), "filesink", sync = False, async = False, location = options.output)
+
+
+#
+# run pipeline
+#
+
+
+pipeline.set_state(Gst.State.PLAYING)
+mainloop.run()
