@@ -212,9 +212,17 @@ else:
 	elem = mkelem(pipeline, None, "videoconvert")
 	src_deferred_link(src, "src_0", elem.get_static_pad("sink"))
 	src = elem
+def src_caps_hander(pad, pspec, ignored):
+	caps = pad.get_property("caps")
+	if caps is not None:
+		s = caps.get_structure(0)
+		success, rate_num, rate_den = s.get_fraction("framerate")
+		logging.info("source material reports %d/%d frames/second" % (rate_num, rate_den))
+src.get_static_pad("src").connect("notify::caps", src_caps_hander, None)
 
 if options.input_framerate is not None:
 	src = mkelem(pipeline, mkelem(pipeline, src, "videoratefaker"), "capsfilter", caps = Gst.Caps.from_string("video/x-raw, format=(string)RGB, framerate=%s" % options.input_framerate))
+	logging.info("forcing framerate to %s frames/second" % options.input_framerate)
 else:
 	src = mkelem(pipeline, src, "capsfilter", caps = Gst.Caps.from_string("video/x-raw, format=(string)RGB"))
 
@@ -243,7 +251,7 @@ if options.brightness is not None or options.contrast is not None:
 
 #
 # do face detection.  auto-adjust minimum face size to fixed fraction of
-# video frame (default is 1x1 which is very CPU-intensive)
+# video frame (default is 1x1 pixels which is very CPU-intensive)
 #
 
 def facedetect_sink_caps_hander(pad, pspec, ignored):
@@ -252,10 +260,9 @@ def facedetect_sink_caps_hander(pad, pspec, ignored):
 		s = caps.get_structure(0)
 		success, width = s.get_int("width")
 		success, height = s.get_int("height")
-		success, rate_num, rate_den = s.get_fraction("framerate")
 		min_width = max(width // 8, 1)
 		min_height = max(height // 6, 1)
-		logging.info("video is %d/%d frames/second, %dx%d pixels:  setting minimum face size to %dx%d pixels" % (rate_num, rate_den, width, height, min_width, min_height))
+		logging.info("video is %dx%d pixels:  setting minimum face size to %dx%d pixels" % (width, height, min_width, min_height))
 		elem = pad.get_parent()
 		elem.set_property("min-size-width", min_width)
 		elem.set_property("min-size-height", min_height)
