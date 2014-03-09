@@ -69,7 +69,7 @@
 
 #define RATE 40				/* Hertz */
 #define UNIT_SIZE (2*sizeof(float))	/* bytes (2 floats) */
-#define KERNEL_LENGTH 17		/* samples */
+#define KERNEL_LENGTH 16		/* samples.  should be even */
 
 
 #undef PLL_DEBUG			/* dump PLL debug info */
@@ -510,7 +510,7 @@ static GstFlowReturn fill(GstBaseSrc *src, guint64 offset, guint size, GstBuffer
 	gint length, i;
 	GstFlowReturn result = GST_FLOW_OK;
 
-	g_assert(size % UNIT_SIZE == 0);
+	g_assert_cmpuint(size % UNIT_SIZE, ==, 0);
 
 	/*
 	 * set metadata
