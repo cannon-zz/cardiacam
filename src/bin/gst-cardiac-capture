@@ -73,12 +73,6 @@ def parse_command_line():
 
 
 class Handler(object):
-	# FIXME:  remove when gstreamer wrapping can retrieve message
-	# object properly
-	import re
-	facesparser = re.compile(r'.*faces=[^{]*\{ *(?:"([^"]*)")+ *\}.*')
-	faceparser = re.compile(r'(?P<name>[^ =]*)=\([^)]*\)(?P<value>[^ ,;]*)')
-
 	def __init__(self, mainloop, pipeline):
 		self.mainloop = mainloop
 		self.pipeline = pipeline
