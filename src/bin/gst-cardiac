@@ -219,6 +219,8 @@ def src_caps_hander(pad, pspec, ignored):
 		success, rate_num, rate_den = s.get_fraction("framerate")
 		logging.info("source material reports %d/%d frames/second" % (rate_num, rate_den))
 src.get_static_pad("src").connect("notify::caps", src_caps_hander, None)
+src = mkelem(pipeline, src, "queue", max_size_bytes = 0, max_size_buffers = 0, max_size_time = 1 * Gst.SECOND)
+src = mkelem(pipeline, src, "videorate")
 
 if options.input_framerate is not None:
 	src = mkelem(pipeline, mkelem(pipeline, src, "videoratefaker"), "capsfilter", caps = Gst.Caps.from_string("video/x-raw, format=(string)RGB, framerate=%s" % options.input_framerate))
