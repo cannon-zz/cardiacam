@@ -48,6 +48,7 @@ def parse_command_line():
 	parser.add_option("--input", metavar = "filename", default = "/dev/video0", help = "Set the name of the V4L2 device file (default = \"/dev/video0\").")
 	parser.add_option("--no-display", action = "store_true", help = "Do not display video in window (allows code to run faster than realtime).")
 	parser.add_option("--output", metavar = "filename", help = "Set the name of the output .ogm file (required).")
+	parser.add_option("--output-ppg", metavar = "filename", help = "Set the name of the output .txt file for WildDevine data (optional).")
 	parser.add_option("-v", "--verbose", action = "store_true", help = "Be verbose.")
 
 	options, filenames = parser.parse_args()
@@ -118,11 +119,12 @@ if options.verbose:
 #
 
 
-#psrc = pipeparts.mkelem(pipeline, None, "wilddevine")
-#psrc = pipeparts.mkelem(pipeline, psrc, "queue", max_size_buffers = 0, max_size_bytes = 0, max_size_time = 5 * Gst.SECOND)
-#if options.verbose:
-#	psrc = pipeparts.mkelem(pipeline, psrc, "progressreport", name = "ppg")
-#pipeparts.mkelem(pipeline, pipeparts.mkelem(pipeline, psrc, "tsvenc"), "filesink", location = "blah.txt")
+if options.output_ppg is not None:
+	psrc = pipeparts.mkelem(pipeline, None, "wilddevine")
+	psrc = pipeparts.mkelem(pipeline, psrc, "queue", max_size_buffers = 0, max_size_bytes = 0, max_size_time = 5 * Gst.SECOND)
+	if options.verbose:
+		psrc = pipeparts.mkelem(pipeline, psrc, "progressreport", name = "ppg")
+	pipeparts.mkelem(pipeline, pipeparts.mkelem(pipeline, psrc, "tsvenc"), "filesink", location = options.output_ppg)
 
 
 #
