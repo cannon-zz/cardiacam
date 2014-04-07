@@ -23,6 +23,10 @@ def load_rgb(fileobj):
 	return t, rgb
 
 
+def t_to_index(tvec, t):
+	return bisect.bisect(tvec, t)
+
+
 def differentiate(rgb, t):
 	rgb = (rgb[2:] - rgb[:-2]).T / (t[2:] - t[:-2])
 	return rgb.T, t[1:-1]
@@ -33,7 +37,7 @@ t, rgb = load_rgb(sys.stdin)
 logging.info("mean sample rate is %g Hz" % (len(t) / (t[-1] - t[0])))
 
 # clip start and stop transients
-transient = bisect.bisect(t, t[0] + transient[0]), bisect.bisect(t, t[-1] - transient[1])
+transient = t_to_index(t, t[0] + transient[0]), t_to_index(t, t[-1] - transient[1])
 rgb = rgb[transient[0]:transient[1]]
 t = t[transient[0]:transient[-1]]
 logging.info("after transient removal, have %d samples spanning [%g s, %g s)" % (len(t), t[0], t[-1]))
@@ -58,7 +62,7 @@ def unmix_rgb(rgb, n_comp = 3):
 	#
 	# the unmix matrix is not unique.  the component order is undefined
 	# and the sign of the components is ambiguous.  the following 5
-	# constrains fix the under and signs of the three components.
+	# constrains fix the order and signs of the three components.
 	#
 
 	# move greenest component to position 0, keeping all matrices
