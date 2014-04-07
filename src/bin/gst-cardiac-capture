@@ -108,7 +108,7 @@ handler = Handler(mainloop, pipeline)
 
 
 vsrc = pipeparts.mkelem(pipeline, pipeparts.mkelem(pipeline, None, "v4l2src", device = options.input), "capsfilter", caps = Gst.Caps.from_string("video/x-raw, width=%d, height=%s, framerate=%s" % options.vfmt))
-vsrc = pipeparts.mkelem(pipeline, vsrc, "queue", max_size_buffers = 0, max_size_bytes = 0, max_size_time = 5 * Gst.SECOND)
+vsrc = pipeparts.mkelem(pipeline, vsrc, "queue", max_size_buffers = 0, max_size_bytes = 0, max_size_time = 1 * Gst.SECOND)
 vsrc = pipeparts.mkelem(pipeline, vsrc, "videorate")
 if options.verbose:
 	vsrc = pipeparts.mkelem(pipeline, vsrc, "progressreport", name = "video")
@@ -135,6 +135,7 @@ if options.output_ppg is not None:
 if not options.no_display:
 	vsrc = pipeparts.mkelem(pipeline, vsrc, "tee")
 	pipeparts.mkelem(pipeline, pipeparts.mkelem(pipeline, pipeparts.mkelem(pipeline, vsrc, "queue", max_size_buffers = 0, max_size_bytes = 0, max_size_time = 1 * Gst.SECOND), "videoconvert"), "autovideosink")
+	vsrc = pipeparts.mkelem(pipeline, vsrc, "queue", max_size_buffers = 0, max_size_bytes = 0, max_size_time = 1 * Gst.SECOND)
 
 
 #
