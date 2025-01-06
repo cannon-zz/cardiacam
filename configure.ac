@@ -1,4 +1,4 @@
-AC_INIT([cardiacam],[0.1.0],[kcannon@cita.utoronto.ca],[cardiacam])
+AC_INIT([cardiacam],[0.1.0],[kipp@g.ecc.u-tokyo.ac.jp],[cardiacam])
 AC_COPYRIGHT([Copyright (C) 2012 Kipp Cannon])
 # a file whose existance can be used to use to check that we are in the
 # top-level directory of the source tree

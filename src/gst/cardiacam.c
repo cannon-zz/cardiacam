@@ -90,4 +90,4 @@ static gboolean plugin_init(GstPlugin *plugin)
  */
 
 
-GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, cardiacam, "Cardiacam plugin", plugin_init, PACKAGE_VERSION, "GPL", PACKAGE_NAME, "http://boron.roadcake.org")
+GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, cardiacam, "Cardiacam plugin", plugin_init, PACKAGE_VERSION, "GPL", PACKAGE_NAME, "https://github.com/cannon-zz/cardiacam")
